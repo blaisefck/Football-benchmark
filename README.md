@@ -3,7 +3,6 @@
 A Streamlit dashboard to benchmark football teams, players, and positions based on high-intensity running metrics (normalized per 90 minutes).
 
 ## 📁 Project Structure
-- `data/original/` – Raw player and team CSV files
 - `data/prepped_players_data.csv` – Cleaned and normalized dataset used by the app
 - `app/streamlit_app.py` – Main Streamlit app
 - `notebooks/` – Exploratory and data cleaning notebooks
