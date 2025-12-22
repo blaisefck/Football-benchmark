@@ -1,4 +1,4 @@
-# ⚽ Physical Benchmark Dashboard
+# ⚽ FC Versailles Benchmark Dashboard
 
 A Streamlit dashboard to benchmark football teams, players, and positions based on high-intensity running metrics (normalized per 90 minutes).
 
