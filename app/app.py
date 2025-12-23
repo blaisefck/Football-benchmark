@@ -151,15 +151,15 @@ def safe_metric_mean(df_in: pd.DataFrame, column: str, unit: str = " m"):
 st.title("High-Intensity Running Benchmark")
 
 st.caption(
-    "This dashboard benchmarks high-intensity running performance (20–25 km/h and >25 km/h) "
-    "on a per-90-minute basis. "
-    "Use the filters to compare FC Versailles with league peers and adjust minimum minutes or games "
-    "to ensure robust comparisons."
+    "Ce tableau de bord permet de comparer les performances de course à haute intensité "
+    "(20–25 km/h et >25 km/h) sur une base de 90 minutes. "
+    "Utilisez les filtres pour comparer le FC Versailles aux autres équipes du championnat "
+    "et ajuster les seuils de minutes jouées ou de matchs afin d’obtenir des comparaisons robustes."
 )
 
-
 st.caption(
-    "Metrics expressed in meters per 90 minutes • Data filtered by minimum minutes and games played."
+    "Les indicateurs sont exprimés en mètres par 90 minutes • "
+    "Les données sont filtrées selon un minimum de minutes et de matchs joués."
 )
 
 # Focus box (Versailles) — shows regardless of Team filter, but respects league/position/minutes
@@ -190,7 +190,7 @@ if page == "Overview":
     c3.metric("Avg Sprint >25 (per90)", safe_metric_mean(filtered_df, "SprintDist_per90"))
 
     st.markdown("---")
-    st.subheader("📊 Distribution by Team")
+    st.subheader("Distribution by Team")
 
     if filtered_df.empty:
         st.info("No data available for the selected filters.")
@@ -225,7 +225,7 @@ if page == "Overview":
         st.altair_chart(chart, use_container_width=True)
 
 elif page == "Team Benchmark":
-    st.subheader("🏆 Team Benchmark (mean / std / games + ranking)")
+    st.subheader("Team Benchmark (mean / std / games + ranking)")
 
     if filtered_df.empty:
         st.info("No data available for the selected filters.")
@@ -291,7 +291,7 @@ elif page == "Team Benchmark":
     )
 
     st.markdown("---")
-    st.subheader("📊 Ranking chart")
+    st.subheader("Ranking chart")
 
     top_n = st.slider("Show top N teams", 5, 30, 20, 1)
     chart_df = bench.head(top_n).copy()
