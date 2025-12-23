@@ -9,7 +9,6 @@ from pathlib import Path
 st.set_page_config(page_title="Football Benchmark Dashboard", layout="wide")
 
 
-# Canonical schema (HER cleaned CSV)
 
 LEAGUE_COL = "newestLeague"
 TEAM_COL = "team"
@@ -26,7 +25,7 @@ METRIC_MAP = {
 MINUTES_COL = "MinIncET"          # minutes played incl. ET (if present)
 MATCH_COL = "gameId"              # unique match id (if present)
 
-# Data loading (use HER cleaned dataset)
+# Data loading
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "prepped_players_data.csv"
 # If your file is elsewhere, change DATA_PATH accordingly.
@@ -55,7 +54,7 @@ if missing:
 has_minutes = MINUTES_COL in df.columns
 has_match = MATCH_COL in df.columns
 
-# Ensure types are safe (light-touch only; no re-cleaning logic)
+# Ensure types are safe
 for m in METRIC_MAP.values():
     df[m] = pd.to_numeric(df[m], errors="coerce")
 
@@ -119,7 +118,7 @@ if versailles_team:
     st.sidebar.caption(f"Auto-focus team: **{versailles_team}**")
 
 
-# Apply filters (no extra cleaning)
+# Apply filters
 
 filtered_df = df.copy()
 
@@ -149,7 +148,19 @@ def safe_metric_mean(df_in: pd.DataFrame, column: str, unit: str = " m"):
 
 # UI
 
-st.title("🏃‍♂️ High-Intensity Running Benchmark")
+st.title("High-Intensity Running Benchmark")
+
+st.caption(
+    "This dashboard benchmarks high-intensity running performance (20–25 km/h and >25 km/h) "
+    "on a per-90-minute basis. "
+    "Use the filters to compare FC Versailles with league peers and adjust minimum minutes or games "
+    "to ensure robust comparisons."
+)
+
+
+st.caption(
+    "Metrics expressed in meters per 90 minutes • Data filtered by minimum minutes and games played."
+)
 
 # Focus box (Versailles) — shows regardless of Team filter, but respects league/position/minutes
 if versailles_team:
@@ -163,7 +174,7 @@ if versailles_team:
         focus_df = focus_df[focus_df[MINUTES_COL].notna() & (focus_df[MINUTES_COL] >= min_minutes)]
 
     with st.container(border=True):
-        st.subheader(f"🎯 Focus: {versailles_team}")
+        st.subheader(f"Focus: {versailles_team}")
         c1, c2, c3 = st.columns(3)
         c1.metric("High-Speed Total (per90)", safe_metric_mean(focus_df, "TotalHighSpeedDist_per90"))
         c2.metric("20–25 km/h (per90)", safe_metric_mean(focus_df, "HiSpeedRunDist_per90"))
