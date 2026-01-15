@@ -215,6 +215,9 @@ def build_metrics_players(df: pd.DataFrame) -> pd.DataFrame:
         )
         df["DistanceRun"] = pd.to_numeric(df["DistanceRun"], errors="coerce")
 
+        # ✅ FIX: Filter out rows where DistanceRun = 0 (missing/bad data)
+        df = df[df["DistanceRun"].notna() & (df["DistanceRun"] > 0)]
+
     # Compute DistanceRun_per90 if missing
     if "DistanceRun_per90" not in df.columns:
         if "DistanceRun" in df.columns and has_minutes:
@@ -263,12 +266,11 @@ if missing_min:
 teams_all = sorted(df_players_all[TEAM_COL].dropna().unique().tolist())
 versailles_team = find_versailles_team(teams_all)
 
-# 4 paramètres (noms staff-friendly)
-# ✅ FIX: Use actual column names from prepped_players_v2.csv
+# 4 paramètres (noms from screenshot - more readable)
 METRIC_MAP = {
-    "Volume haute intensité (≥15 km/h) — per90": "HighIntensity15plus_per90",
-    "Course 20–25 km/h — per90": "HiSpeedRunDist_per90",
-    "Sprints >25 km/h — per90": "SprintDist_per90",
+    ">15 km/h — per90": "HighIntensity15plus_per90",
+    "20-25 km/h — per90": "HiSpeedRunDist_per90",
+    ">25 km/h — per90": "SprintDist_per90",
     "Distance totale — per90": "DistanceRun_per90",  # Will be computed if missing
 }
 available_metrics = {k: v for k, v in METRIC_MAP.items() if v in df_players_all.columns}
@@ -487,9 +489,9 @@ with tabs[0]:
             st.subheader(f"Focus — {versailles_team}")
             c1, c2, c3, c4 = st.columns(4)
             if "HighIntensity15plus_per90" in df_players_all.columns:
-                c1.metric("Volume haute intensité (≥15) — per90", safe_metric_display(focus_df, "HighIntensity15plus_per90", unit="m", decimals=0))
-            c2.metric("20–25 — per90", safe_metric_display(focus_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
-            c3.metric(">25 — per90", safe_metric_display(focus_df, "SprintDist_per90", unit="m", decimals=0))
+                c1.metric(">15 km/h — per90", safe_metric_display(focus_df, "HighIntensity15plus_per90", unit="m", decimals=0))
+            c2.metric("20-25 km/h — per90", safe_metric_display(focus_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
+            c3.metric(">25 km/h — per90", safe_metric_display(focus_df, "SprintDist_per90", unit="m", decimals=0))
             if "DistanceRun_per90" in df_players_all.columns:
                 c4.metric("Distance totale — per90", safe_metric_display(focus_df, "DistanceRun_per90", unit="m", decimals=0))
 
@@ -554,7 +556,7 @@ with tabs[0]:
 
         st.subheader("Tableau (ranking + z-score)")
         show_tbl = bench[[TEAM_COL, "rank", "mean", "z_score"]].head(top_n).copy()
-        st.dataframe(show_tbl, use_container_width=True)
+        st.dataframe(show_tbl, use_container_width=True, height=738)  # ~20 rows visible
 
     else:
         cols4 = list(available_metrics.values())
@@ -703,11 +705,11 @@ with tabs[1]:
 
         c1, c2, c3, c4 = st.columns(4)
         if "HighIntensity15plus_per90" in p_df.columns:
-            c1.metric("Volume haute intensité (≥15) — per90", safe_metric_display(p_df, "HighIntensity15plus_per90", unit="m", decimals=0))
+            c1.metric(">15 km/h — per90", safe_metric_display(p_df, "HighIntensity15plus_per90", unit="m", decimals=0))
         if "HiSpeedRunDist_per90" in p_df.columns:
-            c2.metric("20–25 — per90", safe_metric_display(p_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
+            c2.metric("20-25 km/h — per90", safe_metric_display(p_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
         if "SprintDist_per90" in p_df.columns:
-            c3.metric(">25 — per90", safe_metric_display(p_df, "SprintDist_per90", unit="m", decimals=0))
+            c3.metric(">25 km/h — per90", safe_metric_display(p_df, "SprintDist_per90", unit="m", decimals=0))
         if "DistanceRun_per90" in p_df.columns:
             c4.metric("Distance totale — per90", safe_metric_display(p_df, "DistanceRun_per90", unit="m", decimals=0))
 
@@ -818,11 +820,11 @@ with tabs[2]:
             st.subheader(str(row[TEAM_COL]))
 
             a, b = st.columns(2)
-            a.metric("Volume HI ≥15", fmt_meters(row["hi15"], decimals=0))
+            a.metric(">15 km/h", fmt_meters(row["hi15"], decimals=0))
             b.metric("Distance totale", fmt_meters(row["dist_total"], decimals=0))
 
             c, d = st.columns(2)
-            c.metric("20–25 km/h", fmt_meters(row["hs_20_25"], decimals=0))
+            c.metric("20-25 km/h", fmt_meters(row["hs_20_25"], decimals=0))
             d.metric(">25 km/h", fmt_meters(row["sprint_25"], decimals=0))
 
     render_team_card(left, left_row)
