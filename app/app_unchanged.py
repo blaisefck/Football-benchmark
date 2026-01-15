@@ -6,9 +6,9 @@ import pandas as pd
 import streamlit as st
 
 
-# -----------------------------
+
 # Config
-# -----------------------------
+
 st.set_page_config(page_title="Football Benchmark Dashboard", layout="wide")
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -42,9 +42,9 @@ TEAM_HI_20_25_RAW = "HiSpeedRunDist"
 TEAM_SPRINT_25_RAW = "SprintDist"
 
 
-# -----------------------------
+
 # Helpers (nettoyage + robustesse)
-# -----------------------------
+
 def normalize_columns(df: pd.DataFrame, target_cols: dict = None) -> pd.DataFrame:
     """
     ✅ FIX: Normalize column names to handle mixed case in team files.
@@ -96,15 +96,14 @@ def filter_meta_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def to_num(df: pd.DataFrame, cols) -> pd.DataFrame:
-    """Convert columns to numeric, handling European format (comma as thousand separator)"""
     df = df.copy()
     for c in cols:
         if c in df.columns:
             df[c] = (
                 df[c]
                 .astype(str)
-                .str.replace(",", "", regex=False)  # ✅ FIX: Remove thousand separator first
-                .str.replace(" ", "", regex=False)  # Remove spaces
+                .str.replace(",", ".", regex=False)
+                .str.replace(" ", "", regex=False)  # ✅ Also remove spaces
                 .str.strip()
             )
             df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -179,9 +178,9 @@ def ensure_meters_team_distance(df: pd.DataFrame, col: str) -> pd.DataFrame:
     return df
 
 
-# -----------------------------
+
 # Load data (players prepped)
-# -----------------------------
+
 @st.cache_data
 def load_players(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -205,41 +204,29 @@ def build_metrics_players(df: pd.DataFrame) -> pd.DataFrame:
     if has_minutes:
         df = df[df[MINUTES_COL].notna() & (df[MINUTES_COL] > 0)]
 
-    # ✅ FIX: Handle DistanceRun with European comma format (e.g., "10,342" → 10342)
-    if "DistanceRun" in df.columns:
-        df["DistanceRun"] = (
-            df["DistanceRun"]
-            .astype(str)
-            .str.replace(",", "", regex=False)  # Remove thousand separator
-            .str.strip()
-        )
-        df["DistanceRun"] = pd.to_numeric(df["DistanceRun"], errors="coerce")
-
-    # Compute DistanceRun_per90 if missing
-    if "DistanceRun_per90" not in df.columns:
-        if "DistanceRun" in df.columns and has_minutes:
-            df["DistanceRun_per90"] = df["DistanceRun"] / df[MINUTES_COL] * 90
-
-    # 20–25 per90 (already exists in prepped file, but compute if missing)
+    # 20–25 per90
     if "HiSpeedRunDist_per90" not in df.columns:
         if "HiSpeedRunDist" in df.columns and has_minutes:
             df["HiSpeedRunDist_per90"] = df["HiSpeedRunDist"] / df[MINUTES_COL] * 90
 
-    # Sprint per90 (already exists in prepped file, but compute if missing)
+    # Sprint per90
     if "SprintDist_per90" not in df.columns:
         if "SprintDist" in df.columns and has_minutes:
             df["SprintDist_per90"] = df["SprintDist"] / df[MINUTES_COL] * 90
 
-    # ✅ FIX: The prepped file uses "HighIntensity15plus_per90" not "HighIntensity15plus_per90"
-    # If it doesn't exist, compute it
-    if "HighIntensity15plus_per90" not in df.columns:
+    # Distance totale per90
+    if "DistanceRun_per90" not in df.columns:
+        if "DistanceRun" in df.columns and has_minutes:
+            df["DistanceRun_per90"] = df["DistanceRun"] / df[MINUTES_COL] * 90
+
+    # HI 15+ per90 = (Run 15-20 + 20-25 + >25) / minutes * 90
+    if "HI15plus_per90" not in df.columns:
         if has_minutes:
             if all(c in df.columns for c in ["RunDist", "HiSpeedRunDist", "SprintDist"]):
-                df["HighIntensity15plus"] = df["RunDist"] + df["HiSpeedRunDist"] + df["SprintDist"]
-                df["HighIntensity15plus_per90"] = df["HighIntensity15plus"] / df[MINUTES_COL] * 90
-            elif all(c in df.columns for c in ["HiSpeedRunDist_per90", "SprintDist_per90"]):
-                # Fallback: at minimum add 20-25 + >25
-                df["HighIntensity15plus_per90"] = df["HiSpeedRunDist_per90"] + df["SprintDist_per90"]
+                df["HI15plus"] = df["RunDist"] + df["HiSpeedRunDist"] + df["SprintDist"]
+                df["HI15plus_per90"] = df["HI15plus"] / df[MINUTES_COL] * 90
+            elif all(c in df.columns for c in ["RunDist_per90", "HiSpeedRunDist_per90", "SprintDist_per90"]):
+                df["HI15plus_per90"] = df["RunDist_per90"] + df["HiSpeedRunDist_per90"] + df["SprintDist_per90"]
 
     return df
 
@@ -264,12 +251,11 @@ teams_all = sorted(df_players_all[TEAM_COL].dropna().unique().tolist())
 versailles_team = find_versailles_team(teams_all)
 
 # 4 paramètres (noms staff-friendly)
-# ✅ FIX: Use actual column names from prepped_players_v2.csv
 METRIC_MAP = {
-    "Volume haute intensité (≥15 km/h) — per90": "HighIntensity15plus_per90",
+    "Volume haute intensité (≥15 km/h) — per90": "HI15plus_per90",
     "Course 20–25 km/h — per90": "HiSpeedRunDist_per90",
     "Sprints >25 km/h — per90": "SprintDist_per90",
-    "Distance totale — per90": "DistanceRun_per90",  # Will be computed if missing
+    "Distance totale — per90": "DistanceRun_per90",
 }
 available_metrics = {k: v for k, v in METRIC_MAP.items() if v in df_players_all.columns}
 
@@ -280,9 +266,9 @@ if len(available_metrics) < 3:
     st.stop()
 
 
-# -----------------------------
+
 # Load team raw (Team Match)
-# -----------------------------
+
 @st.cache_data
 def load_team_raw(path: Path, comp_name: str) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -422,17 +408,17 @@ def build_match_selector_meta(df_comp: pd.DataFrame) -> pd.DataFrame:
     return meta
 
 
-# -----------------------------
+
 # UI — Tabs
-# -----------------------------
-tabs = st.tabs(["📊 Benchmark", "👤 Joueurs", "🆚 Team Match"])
+
+tabs = st.tabs([" Benchmark", "Joueurs", "Team Match"])
 
 
-# ==========================================================
+
 # TAB 1 — Benchmark
-# ==========================================================
+
 with tabs[0]:
-    st.title("Benchmark — intensité & volume (par 90)")
+    st.title("Benchmark")
 
     # Filtres SUR la page
     f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.6])
@@ -486,8 +472,8 @@ with tabs[0]:
         with st.container(border=True):
             st.subheader(f"Focus — {versailles_team}")
             c1, c2, c3, c4 = st.columns(4)
-            if "HighIntensity15plus_per90" in df_players_all.columns:
-                c1.metric("Volume haute intensité (≥15) — per90", safe_metric_display(focus_df, "HighIntensity15plus_per90", unit="m", decimals=0))
+            if "HI15plus_per90" in df_players_all.columns:
+                c1.metric("Volume haute intensité (≥15) — per90", safe_metric_display(focus_df, "HI15plus_per90", unit="m", decimals=0))
             c2.metric("20–25 — per90", safe_metric_display(focus_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
             c3.metric(">25 — per90", safe_metric_display(focus_df, "SprintDist_per90", unit="m", decimals=0))
             if "DistanceRun_per90" in df_players_all.columns:
@@ -522,7 +508,7 @@ with tabs[0]:
         key="bm_chart_mode"
     )
 
-    st.subheader("Graphique (vertical)")
+    st.subheader("Graphique")
     top_n = st.slider("Top N équipes", 5, 30, 20, 1, key="bm_topn")
 
     if chart_mode == "Paramètre sélectionné":
@@ -599,11 +585,11 @@ with tabs[0]:
     )
 
 
-# ==========================================================
+
 # TAB 2 — Joueurs (table + fiche joueur)
-# ==========================================================
+
 with tabs[1]:
-    st.title("Joueurs — table + focus individuel")
+    st.title("Joueurs")
 
     f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.6])
 
@@ -646,7 +632,7 @@ with tabs[1]:
     cols_show = [
         PLAYER_COL, TEAM_COL, POSITION_COL, LEAGUE_COL,
         MINUTES_COL if MINUTES_COL in df_f.columns else None,
-        "HighIntensity15plus_per90" if "HighIntensity15plus_per90" in df_f.columns else None,
+        "HI15plus_per90" if "HI15plus_per90" in df_f.columns else None,
         "HiSpeedRunDist_per90" if "HiSpeedRunDist_per90" in df_f.columns else None,
         "SprintDist_per90" if "SprintDist_per90" in df_f.columns else None,
         "DistanceRun_per90" if "DistanceRun_per90" in df_f.columns else None,
@@ -677,33 +663,19 @@ with tabs[1]:
         key="pl_player_select"
     )
 
-    # ✅ FIX: For player detail, get ALL games for this player (ignore position filter)
-    # Apply only league, team, and minutes filters - not position
-    p_df = df_players_all[df_players_all[PLAYER_COL] == chosen_player].copy()
-    if selected_league != "All":
-        p_df = p_df[p_df[LEAGUE_COL] == selected_league]
-    if selected_team != "All":
-        p_df = p_df[p_df[TEAM_COL] == selected_team]
-    if min_minutes is not None and MINUTES_COL in p_df.columns:
-        p_df = p_df[p_df[MINUTES_COL].notna() & (p_df[MINUTES_COL] >= min_minutes)]
+    p_df = df_f[df_f[PLAYER_COL] == chosen_player].copy()
 
     p_team = p_df[TEAM_COL].iloc[0] if not p_df.empty else "—"
+    p_pos = p_df[POSITION_COL].iloc[0] if not p_df.empty else "—"
     p_league = p_df[LEAGUE_COL].iloc[0] if not p_df.empty else "—"
-
-    # ✅ Show all positions played by this player
-    p_positions = p_df[POSITION_COL].unique().tolist() if not p_df.empty else ["—"]
-    p_positions_str = ", ".join(p_positions)
-
-    # Game count
-    n_games = len(p_df)
 
     with st.container(border=True):
         st.subheader(chosen_player)
-        st.caption(f"Équipe: {p_team} • Poste(s): {p_positions_str} • Championnat: {p_league} • Matchs: {n_games}")
+        st.caption(f"Équipe: {p_team} • Poste: {p_pos} • Championnat: {p_league}")
 
         c1, c2, c3, c4 = st.columns(4)
-        if "HighIntensity15plus_per90" in p_df.columns:
-            c1.metric("Volume haute intensité (≥15) — per90", safe_metric_display(p_df, "HighIntensity15plus_per90", unit="m", decimals=0))
+        if "HI15plus_per90" in p_df.columns:
+            c1.metric("Volume haute intensité (≥15) — per90", safe_metric_display(p_df, "HI15plus_per90", unit="m", decimals=0))
         if "HiSpeedRunDist_per90" in p_df.columns:
             c2.metric("20–25 — per90", safe_metric_display(p_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
         if "SprintDist_per90" in p_df.columns:
@@ -717,12 +689,11 @@ with tabs[1]:
     if MATCH_COL in p_df.columns:
         st.subheader("Détail (par match)")
         detail_cols = [MATCH_COL]
-        # ✅ Add date, game info, and Position
-        for c in ["date", "game", POSITION_COL, "opponent"]:
+        for c in ["date", "game", "home", "away", "opponent"]:
             if c in p_df.columns:
                 detail_cols.append(c)
 
-        for c in ["HighIntensity15plus_per90", "HiSpeedRunDist_per90", "SprintDist_per90", "DistanceRun_per90"]:
+        for c in ["HI15plus_per90", "HiSpeedRunDist_per90", "SprintDist_per90", "DistanceRun_per90"]:
             if c in p_df.columns:
                 detail_cols.append(c)
 
@@ -732,9 +703,8 @@ with tabs[1]:
         st.info("Colonne gameId absente côté joueurs → pas de détail par match disponible.")
 
 
-# ==========================================================
 # TAB 3 — Team Match (Option B = fichiers équipes bruts)
-# ==========================================================
+
 with tabs[2]:
     st.title("Team Match — comparaison match")
 
@@ -771,14 +741,14 @@ with tabs[2]:
     game_id = label_to_game[chosen_label]
     match_df = df_comp[df_comp[TEAM_MATCH_COL_RAW] == game_id].copy()
 
-    # Agrégation par équipe - ✅ FIX: Use RAW TOTALS, not per90
+    # Agrégation par équipe (si plusieurs lignes)
     agg = (
         match_df.groupby(TEAM_COL, as_index=False)
         .agg(
-            hi15=("HI15plus", "sum"),  # Raw total HI distance
-            dist_total=(TEAM_DIST_TOTAL_RAW, "sum"),  # Raw total distance
-            hs_20_25=(TEAM_HI_20_25_RAW, "sum"),  # Raw 20-25 km/h
-            sprint_25=(TEAM_SPRINT_25_RAW, "sum"),  # Raw >25 km/h
+            hi15=("HI15plus_per90", "mean"),
+            dist_total=(TEAM_DIST_TOTAL_RAW + "_per90", "mean"),
+            hs_20_25=(TEAM_HI_20_25_RAW + "_per90", "mean"),
+            sprint_25=(TEAM_SPRINT_25_RAW + "_per90", "mean"),
         )
     )
     agg = clean_team_col(agg, TEAM_COL)
@@ -818,12 +788,12 @@ with tabs[2]:
             st.subheader(str(row[TEAM_COL]))
 
             a, b = st.columns(2)
-            a.metric("Volume HI ≥15", fmt_meters(row["hi15"], decimals=0))
-            b.metric("Distance totale", fmt_meters(row["dist_total"], decimals=0))
+            a.metric("Volume HI ≥15 — per90", fmt_meters(row["hi15"], decimals=0))
+            b.metric("Distance totale — per90", fmt_meters(row["dist_total"], decimals=0))
 
             c, d = st.columns(2)
-            c.metric("20–25 km/h", fmt_meters(row["hs_20_25"], decimals=0))
-            d.metric(">25 km/h", fmt_meters(row["sprint_25"], decimals=0))
+            c.metric("20–25 — per90", fmt_meters(row["hs_20_25"], decimals=0))
+            d.metric(">25 — per90", fmt_meters(row["sprint_25"], decimals=0))
 
     render_team_card(left, left_row)
 
@@ -833,4 +803,4 @@ with tabs[2]:
         st.info("Une seule équipe disponible pour ce match (donnée incomplète côté adversaire).")
 
     st.markdown("---")
-    st.caption("Distances exprimées en mètres (totaux équipe sur le match).")
+    st.caption("Distances exprimées en mètres par 90 minutes (m/90).")
