@@ -1142,28 +1142,45 @@ with tabs[2]:
             opponent_name = opponent_row[TEAM_COL].iloc[0] if not opponent_row.empty else "—"
             opponent_row = opponent_row.iloc[0] if not opponent_row.empty else None
 
-            # Compact card
-            st.markdown(
-                f"""
-                <div style="border: 2px solid {color}; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 0.85em;">
-                    <div style="color: {color}; font-weight: bold; margin-bottom: 8px; font-size: 0.95em;">{match_label}</div>
-                    <div style="display: flex; gap: 20px;">
-                        <div style="flex: 1; color: {color};">
-                            <div style="font-weight: bold; margin-bottom: 5px;">{selected_team}</div>
-                            <div>>15: {selected_row['hi15']:,.0f}m (#{match_ranks['hi15']})</div>
-                            <div>Dist: {selected_row['dist_total']:,.0f}m (#{match_ranks['dist']})</div>
-                            <div>20-25: {selected_row['hs_20_25']:,.0f}m (#{match_ranks['hs']})</div>
-                            <div>>25: {selected_row['sprint_25']:,.0f}m (#{match_ranks['sprint']})</div>
-                        </div>
-                        <div style="flex: 1; color: {color};">
-                            <div style="font-weight: bold; margin-bottom: 5px;">{opponent_name}</div>
-                            {"<div>>15: " + f"{opponent_row['hi15']:,.0f}m</div><div>Dist: {opponent_row['dist_total']:,.0f}m</div><div>20-25: {opponent_row['hs_20_25']:,.0f}m</div><div>>25: {opponent_row['sprint_25']:,.0f}m</div>" if opponent_row is not None else "<div>—</div>"}
+            # Check if GPS data is available (all metrics = 0 means no data)
+            has_data = selected_row['hi15'] > 0 or selected_row['dist_total'] > 0
+
+            if has_data:
+                # Compact card with data
+                st.markdown(
+                    f"""
+                    <div style="border: 2px solid {color}; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 0.85em;">
+                        <div style="color: {color}; font-weight: bold; margin-bottom: 8px; font-size: 0.95em;">{match_label}</div>
+                        <div style="display: flex; gap: 20px;">
+                            <div style="flex: 1; color: {color};">
+                                <div style="font-weight: bold; margin-bottom: 5px;">{selected_team}</div>
+                                <div>>15: {selected_row['hi15']:,.0f}m (#{match_ranks['hi15']})</div>
+                                <div>Dist: {selected_row['dist_total']:,.0f}m (#{match_ranks['dist']})</div>
+                                <div>20-25: {selected_row['hs_20_25']:,.0f}m (#{match_ranks['hs']})</div>
+                                <div>>25: {selected_row['sprint_25']:,.0f}m (#{match_ranks['sprint']})</div>
+                            </div>
+                            <div style="flex: 1; color: {color};">
+                                <div style="font-weight: bold; margin-bottom: 5px;">{opponent_name}</div>
+                                {"<div>>15: " + f"{opponent_row['hi15']:,.0f}m</div><div>Dist: {opponent_row['dist_total']:,.0f}m</div><div>20-25: {opponent_row['hs_20_25']:,.0f}m</div><div>>25: {opponent_row['sprint_25']:,.0f}m</div>" if opponent_row is not None else "<div>—</div>"}
+                            </div>
                         </div>
                     </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+                    """,
+                    unsafe_allow_html=True
+                )
+            else:
+                # Card with no GPS data message
+                st.markdown(
+                    f"""
+                    <div style="border: 2px solid {color}; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 0.85em; opacity: 0.7;">
+                        <div style="color: {color}; font-weight: bold; margin-bottom: 8px; font-size: 0.95em;">{match_label}</div>
+                        <div style="color: #888; font-style: italic; text-align: center; padding: 10px;">
+                            Données GPS non disponibles
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
     # =============================================
     # DISPLAY MATCHES (2 per row)
@@ -1189,3 +1206,170 @@ with tabs[2]:
         render_match_card(game_id, chosen_label, col1)
 
     st.caption("Distances exprimées en mètres (totaux équipe sur le match). Rankings basés sur les matchs de l'équipe sélectionnée.")
+
+    # =============================================
+    # SCATTER PLOT — All matches in division (z-score)
+    # =============================================
+    st.markdown("---")
+    st.subheader("Scatter Plot — Comparaison des matchs (équipes)")
+    st.caption("Axes en z-score : 0 = moyenne de la division, positif = au-dessus de la moyenne")
+
+    # Separate filters for scatter plot
+    scatter_c1, scatter_c2, scatter_c3, scatter_c4 = st.columns([1.2, 1.5, 1.5, 1.5])
+
+    with scatter_c1:
+        scatter_comp = st.selectbox("Division", ["National 1", "Ligue 2"], index=0, key="tm_scatter_comp")
+
+    # Get data for selected division
+    df_scatter_comp = df_team_all[df_team_all["competition"] == scatter_comp].copy()
+
+    # Get teams in this division
+    scatter_teams = sorted(df_scatter_comp[TEAM_COL].dropna().unique().tolist())
+
+    # Default to Versailles if available
+    scatter_default_idx = 0
+    for i, t in enumerate(scatter_teams):
+        if "versailles" in str(t).lower():
+            scatter_default_idx = i
+            break
+
+    with scatter_c2:
+        scatter_highlight_team = st.selectbox("Équipe à mettre en avant", scatter_teams, index=scatter_default_idx, key="tm_scatter_team")
+
+    # Metric selectors for X and Y axes
+    scatter_metrics = {
+        ">15 km/h": "HI15plus",
+        "20-25 km/h": TEAM_HI_20_25_RAW,
+        ">25 km/h": TEAM_SPRINT_25_RAW,
+        "Distance totale": TEAM_DIST_TOTAL_RAW
+    }
+
+    with scatter_c3:
+        scatter_x_label = st.selectbox("Axe X", list(scatter_metrics.keys()), index=0, key="tm_scatter_x")
+
+    with scatter_c4:
+        scatter_y_label = st.selectbox("Axe Y", list(scatter_metrics.keys()), index=3, key="tm_scatter_y")
+
+    scatter_x_col = scatter_metrics[scatter_x_label]
+    scatter_y_col = scatter_metrics[scatter_y_label]
+
+    # Aggregate by team and match
+    scatter_agg = (
+        df_scatter_comp.groupby([TEAM_COL, TEAM_MATCH_COL_RAW], as_index=False)
+        .agg({
+            scatter_x_col: "sum",
+            scatter_y_col: "sum"
+        })
+    )
+    scatter_agg = clean_team_col(scatter_agg, TEAM_COL)
+    scatter_agg = scatter_agg[scatter_agg[TEAM_COL].astype(str).str.strip().ne(".")]
+    scatter_agg = scatter_agg.dropna(subset=[scatter_x_col, scatter_y_col])
+
+    if not scatter_agg.empty and len(scatter_agg) > 1:
+        # Calculate z-scores
+        scatter_agg["x_zscore"] = zscore(scatter_agg[scatter_x_col])
+        scatter_agg["y_zscore"] = zscore(scatter_agg[scatter_y_col])
+        scatter_agg = scatter_agg.dropna(subset=["x_zscore", "y_zscore"])
+
+        # Highlight selected team
+        scatter_agg["is_highlight"] = scatter_agg[TEAM_COL].apply(
+            lambda t: "Sélectionné" if t == scatter_highlight_team else "Autre"
+        )
+
+        # Split data for layering
+        df_autres = scatter_agg[scatter_agg["is_highlight"] == "Autre"]
+        df_highlight = scatter_agg[scatter_agg["is_highlight"] == "Sélectionné"]
+
+        # Layer 1: Other teams (small, transparent)
+        scatter_autres = (
+            alt.Chart(df_autres)
+            .mark_circle(size=40, opacity=0.25)
+            .encode(
+                x=alt.X("x_zscore:Q", title=f"{scatter_x_label} (z-score)",
+                        scale=alt.Scale(domain=[-3, 3]),
+                        axis=alt.Axis(grid=False, tickCount=7)),
+                y=alt.Y("y_zscore:Q", title=f"{scatter_y_label} (z-score)",
+                        scale=alt.Scale(domain=[-3, 3]),
+                        axis=alt.Axis(grid=False, tickCount=7)),
+                color=alt.value("#6c757d"),
+                tooltip=[
+                    alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
+                    alt.Tooltip(f"{scatter_x_col}:Q", title=scatter_x_label, format=",.0f"),
+                    alt.Tooltip(f"{scatter_y_col}:Q", title=scatter_y_label, format=",.0f"),
+                ]
+            )
+        )
+
+        # Layer 2: Highlighted team (larger, with white border)
+        scatter_highlight_border = (
+            alt.Chart(df_highlight)
+            .mark_circle(size=180, color="white")
+            .encode(
+                x=alt.X("x_zscore:Q"),
+                y=alt.Y("y_zscore:Q"),
+            )
+        )
+
+        scatter_highlight_points = (
+            alt.Chart(df_highlight)
+            .mark_circle(size=120, opacity=1)
+            .encode(
+                x=alt.X("x_zscore:Q"),
+                y=alt.Y("y_zscore:Q"),
+                color=alt.value("#e74c3c"),
+                tooltip=[
+                    alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
+                    alt.Tooltip(f"{scatter_x_col}:Q", title=scatter_x_label, format=",.0f"),
+                    alt.Tooltip(f"{scatter_y_col}:Q", title=scatter_y_label, format=",.0f"),
+                    alt.Tooltip("x_zscore:Q", title="Z-score X", format=".2f"),
+                    alt.Tooltip("y_zscore:Q", title="Z-score Y", format=".2f"),
+                ]
+            )
+        )
+
+        # Axis lines (dashed, white)
+        hline = (
+            alt.Chart(pd.DataFrame({"y": [0]}))
+            .mark_rule(color="white", strokeWidth=2, strokeDash=[5, 5])
+            .encode(y="y:Q")
+        )
+
+        vline = (
+            alt.Chart(pd.DataFrame({"x": [0]}))
+            .mark_rule(color="white", strokeWidth=2, strokeDash=[5, 5])
+            .encode(x="x:Q")
+        )
+
+        # Quadrant labels
+        labels_data = pd.DataFrame({
+            "x": [2.2, -2.2, 2.2, -2.2],
+            "y": [2.5, 2.5, -2.5, -2.5],
+            "label": ["↗ Elite", "↖ Y élevé", "↘ X élevé", "↙ En dessous"]
+        })
+
+        quadrant_labels = (
+            alt.Chart(labels_data)
+            .mark_text(fontSize=11, fontWeight="bold", opacity=0.6)
+            .encode(
+                x=alt.X("x:Q"),
+                y=alt.Y("y:Q"),
+                text="label:N",
+                color=alt.value("#ffffff")
+            )
+        )
+
+        # Combine all layers
+        scatter_chart = (
+            scatter_autres +
+            hline + vline +
+            scatter_highlight_border + scatter_highlight_points +
+            quadrant_labels
+        ).properties(
+            height=500
+        ).configure_view(
+            strokeWidth=0
+        )
+
+        st.altair_chart(scatter_chart, use_container_width=True)
+    else:
+        st.info("Pas assez de données pour afficher le scatter plot.")
