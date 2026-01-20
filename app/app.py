@@ -453,7 +453,7 @@ with tabs[0]:
     with f1:
         selected_league = st.selectbox("Championnat", ["All"] + leagues, index=0, key="bm_league")
     with f2:
-        selected_position = st.selectbox("Poste", ["All"] + positions, index=0, key="bm_pos")
+        selected_positions = st.multiselect("Poste(s)", positions, default=[], key="bm_pos")
     with f3:
         default_team = versailles_team if versailles_team else "All"
         team_choices = ["All"] + teams
@@ -475,8 +475,8 @@ with tabs[0]:
     df_f = df_players_all.copy()
     if selected_league != "All":
         df_f = df_f[df_f[LEAGUE_COL] == selected_league]
-    if selected_position != "All":
-        df_f = df_f[df_f[POSITION_COL] == selected_position]
+    if selected_positions:  # If any positions selected, filter by them
+        df_f = df_f[df_f[POSITION_COL].isin(selected_positions)]
     if selected_team != "All":
         df_f = df_f[df_f[TEAM_COL] == selected_team]
     if min_minutes is not None and MINUTES_COL in df_f.columns:
@@ -489,8 +489,8 @@ with tabs[0]:
         focus_df = df_players_all[df_players_all[TEAM_COL] == versailles_team].copy()
         if selected_league != "All":
             focus_df = focus_df[focus_df[LEAGUE_COL] == selected_league]
-        if selected_position != "All":
-            focus_df = focus_df[focus_df[POSITION_COL] == selected_position]
+        if selected_positions:  # If any positions selected, filter by them
+            focus_df = focus_df[focus_df[POSITION_COL].isin(selected_positions)]
         if min_minutes is not None and MINUTES_COL in focus_df.columns:
             focus_df = focus_df[focus_df[MINUTES_COL].notna() & (focus_df[MINUTES_COL] >= min_minutes)]
 
@@ -634,7 +634,7 @@ with tabs[1]:
     with f2:
         selected_team = st.selectbox("Équipe", ["All"] + teams, index=0, key="pl_team")
     with f3:
-        selected_position = st.selectbox("Poste", ["All"] + positions, index=0, key="pl_pos")
+        selected_positions = st.multiselect("Poste(s)", positions, default=[], key="pl_pos")
     with f4:
         metric_label = st.selectbox("Tri (paramètre)", list(available_metrics.keys()), index=0, key="pl_metric")
 
@@ -650,8 +650,8 @@ with tabs[1]:
         df_f = df_f[df_f[LEAGUE_COL] == selected_league]
     if selected_team != "All":
         df_f = df_f[df_f[TEAM_COL] == selected_team]
-    if selected_position != "All":
-        df_f = df_f[df_f[POSITION_COL] == selected_position]
+    if selected_positions:  # If any positions selected, filter by them
+        df_f = df_f[df_f[POSITION_COL].isin(selected_positions)]
     if min_minutes is not None and MINUTES_COL in df_f.columns:
         df_f = df_f[df_f[MINUTES_COL].notna() & (df_f[MINUTES_COL] >= min_minutes)]
 
@@ -742,14 +742,14 @@ with tabs[1]:
     # Add horizontal line at y=0 (average)
     hline = (
         alt.Chart(pd.DataFrame({"y": [0]}))
-        .mark_rule(color="black", strokeWidth=1)
+        .mark_rule(color="white", strokeWidth=1.5)
         .encode(y="y:Q")
     )
 
     # Add vertical line at x=0 (average)
     vline = (
         alt.Chart(pd.DataFrame({"x": [0]}))
-        .mark_rule(color="black", strokeWidth=1)
+        .mark_rule(color="white", strokeWidth=1.5)
         .encode(x="x:Q")
     )
 
