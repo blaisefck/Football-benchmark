@@ -990,88 +990,215 @@ with tabs[2]:
 
     df_team_all = clean_team_col(df_team_all, TEAM_COL)
 
-    c1, c2 = st.columns([1.2, 3.8])
+    # =============================================
+    # FILTRES
+    # =============================================
+    c1, c2, c3 = st.columns([1.2, 1.5, 2.3])
 
     with c1:
-        comp = st.selectbox("Championnat", ["Ligue 2", "National 1"], index=0, key="tm_comp")
+        comp = st.selectbox("Championnat", ["National 1", "Ligue 2"], index=0, key="tm_comp")
 
     df_comp = df_team_all[df_team_all["competition"] == comp].copy()
 
-    meta = build_match_selector_meta(df_comp)
-    if meta.empty:
-        st.info("Aucun match exploitable dans ces fichiers (vérifie les colonnes date/home/away/opponent/score).")
-        st.stop()
+    # Get list of teams in this competition
+    teams_in_comp = sorted(df_comp[TEAM_COL].dropna().unique().tolist())
 
-    # label -> gameId
-    labels = meta["match_label"].tolist()
-    label_to_game = dict(zip(meta["match_label"], meta[TEAM_MATCH_COL_RAW]))
+    # Default to Versailles if available
+    default_team_idx = 0
+    for i, t in enumerate(teams_in_comp):
+        if "versailles" in str(t).lower():
+            default_team_idx = i
+            break
 
     with c2:
-        chosen_label = st.selectbox("Match", labels, key="tm_match_label")
+        selected_team = st.selectbox("Équipe", teams_in_comp, index=default_team_idx, key="tm_team")
 
-    game_id = label_to_game[chosen_label]
-    match_df = df_comp[df_comp[TEAM_MATCH_COL_RAW] == game_id].copy()
+    # Filter data for selected team
+    df_team_filtered = df_comp[df_comp[TEAM_COL] == selected_team].copy()
 
-    # Agrégation par équipe - ✅ FIX: Use RAW TOTALS, not per90
-    agg = (
-        match_df.groupby(TEAM_COL, as_index=False)
-        .agg(
-            hi15=("HI15plus", "sum"),  # Raw total HI distance
-            dist_total=(TEAM_DIST_TOTAL_RAW, "sum"),  # Raw total distance
-            hs_20_25=(TEAM_HI_20_25_RAW, "sum"),  # Raw 20-25 km/h
-            sprint_25=(TEAM_SPRINT_25_RAW, "sum"),  # Raw >25 km/h
-        )
-    )
-    agg = clean_team_col(agg, TEAM_COL)
-    agg = agg[agg[TEAM_COL].astype(str).str.strip().ne(".")]
-
-    if agg.empty:
-        st.info("Aucune donnée match exploitable (valeurs manquantes ou équipes invalides).")
+    if df_team_filtered.empty:
+        st.info("Aucune donnée pour cette équipe.")
         st.stop()
 
-    # 🔥 Forcer Home à gauche / Away à droite si possible
-    home_team = None
-    away_team = None
-    meta_row = meta[meta[TEAM_MATCH_COL_RAW] == game_id]
-    if not meta_row.empty:
-        home_team = meta_row["home_team"].iloc[0]
-        away_team = meta_row["away_team"].iloc[0]
+    # Build match list for this team
+    meta = build_match_selector_meta(df_comp)
 
-    def get_row(team_name: str):
-        if team_name is None:
-            return None
-        rows = agg[agg[TEAM_COL] == team_name]
-        return rows.iloc[0] if not rows.empty else None
+    # Filter meta to only matches involving selected team
+    team_matches = meta[
+        (meta["home_team"] == selected_team) | (meta["away_team"] == selected_team)
+    ].copy()
 
-    left_row = get_row(home_team)
-    right_row = get_row(away_team)
+    if team_matches.empty:
+        st.info("Aucun match trouvé pour cette équipe.")
+        st.stop()
 
-    # fallback si la déduction home/away échoue
-    if left_row is None or right_row is None:
-        agg_sorted = agg.sort_values("hi15", ascending=False).reset_index(drop=True)
-        left_row = agg_sorted.iloc[0]
-        right_row = agg_sorted.iloc[1] if len(agg_sorted) > 1 else None
+    # Build match selector with "Tous les matchs" option
+    match_labels = ["Tous les matchs"] + team_matches["match_label"].tolist()
+    label_to_game = dict(zip(team_matches["match_label"], team_matches[TEAM_MATCH_COL_RAW]))
 
-    left, right = st.columns(2)
-
-    def render_team_card(container, row):
-        with container:
-            st.subheader(str(row[TEAM_COL]))
-
-            a, b = st.columns(2)
-            a.metric(">15 km/h", fmt_meters(row["hi15"], decimals=0))
-            b.metric("Distance totale", fmt_meters(row["dist_total"], decimals=0))
-
-            c, d = st.columns(2)
-            c.metric("20-25 km/h", fmt_meters(row["hs_20_25"], decimals=0))
-            d.metric(">25 km/h", fmt_meters(row["sprint_25"], decimals=0))
-
-    render_team_card(left, left_row)
-
-    if right_row is not None:
-        render_team_card(right, right_row)
-    else:
-        st.info("Une seule équipe disponible pour ce match (donnée incomplète côté adversaire).")
+    with c3:
+        chosen_label = st.selectbox("Match", match_labels, index=0, key="tm_match_label")
 
     st.markdown("---")
-    st.caption("Distances exprimées en mètres (totaux équipe sur le match).")
+
+    # =============================================
+    # CALCULATE RANKINGS FOR SELECTED TEAM (across all their matches)
+    # =============================================
+    # Aggregate stats per match for the selected team
+    team_match_stats = (
+        df_team_filtered.groupby(TEAM_MATCH_COL_RAW, as_index=False)
+        .agg(
+            hi15=("HI15plus", "sum"),
+            dist_total=(TEAM_DIST_TOTAL_RAW, "sum"),
+            hs_20_25=(TEAM_HI_20_25_RAW, "sum"),
+            sprint_25=(TEAM_SPRINT_25_RAW, "sum"),
+        )
+    )
+
+    # Calculate rankings (1 = best)
+    team_match_stats["rank_hi15"] = team_match_stats["hi15"].rank(ascending=False, method="min").astype(int)
+    team_match_stats["rank_dist"] = team_match_stats["dist_total"].rank(ascending=False, method="min").astype(int)
+    team_match_stats["rank_hs"] = team_match_stats["hs_20_25"].rank(ascending=False, method="min").astype(int)
+    team_match_stats["rank_sprint"] = team_match_stats["sprint_25"].rank(ascending=False, method="min").astype(int)
+
+    n_matches = len(team_match_stats)
+
+    # Create lookup dict for rankings
+    rankings = {}
+    for _, row in team_match_stats.iterrows():
+        rankings[row[TEAM_MATCH_COL_RAW]] = {
+            "hi15": row["rank_hi15"],
+            "dist": row["rank_dist"],
+            "hs": row["rank_hs"],
+            "sprint": row["rank_sprint"]
+        }
+
+    # =============================================
+    # HELPER: Get match result for selected team
+    # =============================================
+    def get_match_result(game_id, team_name):
+        """Returns 'win', 'draw', 'loss' or None"""
+        match_data = df_comp[
+            (df_comp[TEAM_MATCH_COL_RAW] == game_id) &
+            (df_comp[TEAM_COL] == team_name)
+        ]
+        if match_data.empty:
+            return None
+        row = match_data.iloc[0]
+        if row.get("win", False) == True or str(row.get("win", "")).lower() == "true":
+            return "win"
+        elif row.get("draw", False) == True or str(row.get("draw", "")).lower() == "true":
+            return "draw"
+        elif row.get("loss", False) == True or str(row.get("loss", "")).lower() == "true":
+            return "loss"
+        return None
+
+    # =============================================
+    # RENDER MATCH CARD
+    # =============================================
+    def render_match_card(game_id, match_label):
+        # Get match data for both teams
+        match_df = df_comp[df_comp[TEAM_MATCH_COL_RAW] == game_id].copy()
+
+        # Aggregate by team
+        agg = (
+            match_df.groupby(TEAM_COL, as_index=False)
+            .agg(
+                hi15=("HI15plus", "sum"),
+                dist_total=(TEAM_DIST_TOTAL_RAW, "sum"),
+                hs_20_25=(TEAM_HI_20_25_RAW, "sum"),
+                sprint_25=(TEAM_SPRINT_25_RAW, "sum"),
+            )
+        )
+        agg = clean_team_col(agg, TEAM_COL)
+        agg = agg[agg[TEAM_COL].astype(str).str.strip().ne(".")]
+
+        if agg.empty:
+            return
+
+        # Get result for color
+        result = get_match_result(game_id, selected_team)
+
+        # Set colors based on result
+        if result == "win":
+            color = "#2ecc71"  # Green
+            result_text = "✓ VICTOIRE"
+        elif result == "loss":
+            color = "#e74c3c"  # Red
+            result_text = "✗ DÉFAITE"
+        else:
+            color = "#95a5a6"  # Grey
+            result_text = "= NUL"
+
+        # Get rankings for this match
+        match_ranks = rankings.get(game_id, {"hi15": "-", "dist": "-", "hs": "-", "sprint": "-"})
+
+        # Find selected team and opponent rows
+        selected_row = agg[agg[TEAM_COL] == selected_team]
+        opponent_row = agg[agg[TEAM_COL] != selected_team]
+
+        if selected_row.empty:
+            return
+
+        selected_row = selected_row.iloc[0]
+        opponent_name = opponent_row[TEAM_COL].iloc[0] if not opponent_row.empty else "—"
+        opponent_row = opponent_row.iloc[0] if not opponent_row.empty else None
+
+        # Render card with colored border
+        st.markdown(
+            f"""
+            <div style="border: 3px solid {color}; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="margin: 0; color: {color};">{match_label}</h3>
+                    <span style="color: {color}; font-weight: bold; font-size: 1.2em;">{result_text}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # Two columns for teams
+        col_left, col_right = st.columns(2)
+
+        with col_left:
+            st.markdown(f"**{selected_team}** (sélectionné)")
+            st.markdown(f"""
+            <div style="color: {color};">
+                <p>>15 km/h: <strong>{selected_row['hi15']:,.0f} m</strong> (#{match_ranks['hi15']}/{n_matches})</p>
+                <p>Distance totale: <strong>{selected_row['dist_total']:,.0f} m</strong> (#{match_ranks['dist']}/{n_matches})</p>
+                <p>20-25 km/h: <strong>{selected_row['hs_20_25']:,.0f} m</strong> (#{match_ranks['hs']}/{n_matches})</p>
+                <p>>25 km/h: <strong>{selected_row['sprint_25']:,.0f} m</strong> (#{match_ranks['sprint']}/{n_matches})</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_right:
+            if opponent_row is not None:
+                st.markdown(f"**{opponent_name}**")
+                st.markdown(f"""
+                <div style="color: {color};">
+                    <p>>15 km/h: <strong>{opponent_row['hi15']:,.0f} m</strong></p>
+                    <p>Distance totale: <strong>{opponent_row['dist_total']:,.0f} m</strong></p>
+                    <p>20-25 km/h: <strong>{opponent_row['hs_20_25']:,.0f} m</strong></p>
+                    <p>>25 km/h: <strong>{opponent_row['sprint_25']:,.0f} m</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("Données adversaire non disponibles")
+
+        st.markdown("---")
+
+    # =============================================
+    # DISPLAY MATCHES
+    # =============================================
+    if chosen_label == "Tous les matchs":
+        st.subheader(f"Tous les matchs de {selected_team} ({n_matches} matchs)")
+
+        # Show all matches
+        for _, row in team_matches.iterrows():
+            render_match_card(row[TEAM_MATCH_COL_RAW], row["match_label"])
+    else:
+        # Show single match
+        game_id = label_to_game[chosen_label]
+        render_match_card(game_id, chosen_label)
+
+    st.caption("Distances exprimées en mètres (totaux équipe sur le match). Rankings basés sur les matchs de l'équipe sélectionnée.")
