@@ -436,7 +436,14 @@ tabs = st.tabs(["📊 Benchmark", "👤 Joueurs", "🆚 Team Match"])
 with tabs[0]:
     st.title("Benchmark — intensité & volume (par 90)")
 
-    # Filtres SUR la page
+    # =============================================
+    # FOCUS VERSAILLES — EN HAUT (placeholder)
+    # =============================================
+    focus_placeholder = st.empty()
+
+    # =============================================
+    # FILTRES
+    # =============================================
     f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.6])
 
     leagues = sorted(df_players_all[LEAGUE_COL].dropna().unique().tolist())
@@ -457,7 +464,7 @@ with tabs[0]:
 
     metric_col = available_metrics[metric_label]
 
-    # slider minutes (garder)
+    # slider minutes
     if MINUTES_COL in df_players_all.columns:
         min_minutes = st.slider("Minimum minutes jouées", 0, 120, 30, 5, key="bm_min")
     else:
@@ -475,7 +482,9 @@ with tabs[0]:
     if min_minutes is not None and MINUTES_COL in df_f.columns:
         df_f = df_f[df_f[MINUTES_COL].notna() & (df_f[MINUTES_COL] >= min_minutes)]
 
-    # Focus FC Versailles (auto)
+    # =============================================
+    # FOCUS VERSAILLES — Affiché dans le placeholder en haut
+    # =============================================
     if versailles_team:
         focus_df = df_players_all[df_players_all[TEAM_COL] == versailles_team].copy()
         if selected_league != "All":
@@ -485,15 +494,16 @@ with tabs[0]:
         if min_minutes is not None and MINUTES_COL in focus_df.columns:
             focus_df = focus_df[focus_df[MINUTES_COL].notna() & (focus_df[MINUTES_COL] >= min_minutes)]
 
-        with st.container(border=True):
-            st.subheader(f"Focus — {versailles_team}")
-            c1, c2, c3, c4 = st.columns(4)
-            if "HighIntensity15plus_per90" in df_players_all.columns:
-                c1.metric(">15 km/h — per90", safe_metric_display(focus_df, "HighIntensity15plus_per90", unit="m", decimals=0))
-            c2.metric("20-25 km/h — per90", safe_metric_display(focus_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
-            c3.metric(">25 km/h — per90", safe_metric_display(focus_df, "SprintDist_per90", unit="m", decimals=0))
-            if "DistanceRun_per90" in df_players_all.columns:
-                c4.metric("Distance totale — per90", safe_metric_display(focus_df, "DistanceRun_per90", unit="m", decimals=0))
+        with focus_placeholder.container():
+            with st.container(border=True):
+                st.subheader(f"Focus — {versailles_team}")
+                c1, c2, c3, c4 = st.columns(4)
+                if "HighIntensity15plus_per90" in df_players_all.columns:
+                    c1.metric(">15 km/h — per90", safe_metric_display(focus_df, "HighIntensity15plus_per90", unit="m", decimals=0))
+                c2.metric("20-25 km/h — per90", safe_metric_display(focus_df, "HiSpeedRunDist_per90", unit="m", decimals=0))
+                c3.metric(">25 km/h — per90", safe_metric_display(focus_df, "SprintDist_per90", unit="m", decimals=0))
+                if "DistanceRun_per90" in df_players_all.columns:
+                    c4.metric("Distance totale — per90", safe_metric_display(focus_df, "DistanceRun_per90", unit="m", decimals=0))
 
     st.markdown("---")
 
@@ -509,88 +519,91 @@ with tabs[0]:
         .sort_values("mean", ascending=False)
         .reset_index(drop=True)
     )
-    bench = clean_team_col(bench, TEAM_COL)  # ✅ enlève '.' etc
+    bench = clean_team_col(bench, TEAM_COL)
     bench = bench[bench[TEAM_COL].astype(str).str.strip().ne(".")]
 
     bench = bench.reset_index(drop=True)
     bench["rank"] = bench.index + 1
     bench["z_score"] = zscore(bench["mean"])
 
-    chart_mode = st.radio(
-        "Affichage du graphique",
-        ["Paramètre sélectionné", "Comparer les 4 paramètres"],
-        horizontal=True,
-        index=0,
-        key="bm_chart_mode"
-    )
-
-    st.subheader("Graphique (vertical)")
     top_n = st.slider("Top N équipes", 5, 30, 20, 1, key="bm_topn")
 
-    if chart_mode == "Paramètre sélectionné":
-        chart_df = bench.head(top_n).copy()
-        chart_df["highlight"] = "Other"
-        if versailles_team and versailles_team in set(chart_df[TEAM_COL]):
-            chart_df.loc[chart_df[TEAM_COL] == versailles_team, "highlight"] = "FC Versailles"
+    # =============================================
+    # GRAPHIQUE 1 — Paramètre sélectionné
+    # =============================================
+    st.subheader(f"Graphique — {metric_label}")
 
-        bar = (
-            alt.Chart(chart_df)
-            .mark_bar()
-            .encode(
-                x=alt.X(f"{TEAM_COL}:N", sort="-y", title="Équipe", axis=alt.Axis(labelAngle=-60)),
-                y=alt.Y("mean:Q", title=f"Moyenne — {metric_label} (m/90)"),
-                color=alt.Color(
-                    "highlight:N",
-                    scale=alt.Scale(domain=["FC Versailles", "Other"]),
-                    legend=alt.Legend(title="")
-                ),
-                tooltip=[
-                    alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
-                    alt.Tooltip("rank:Q", title="Rang"),
-                    alt.Tooltip("mean:Q", title="Moyenne (m/90)", format=".0f"),
-                    alt.Tooltip("z_score:Q", title="Z-score", format=".2f"),
-                ],
-            )
+    chart_df = bench.head(top_n).copy()
+    chart_df["highlight"] = "Other"
+    if versailles_team and versailles_team in set(chart_df[TEAM_COL]):
+        chart_df.loc[chart_df[TEAM_COL] == versailles_team, "highlight"] = "FC Versailles"
+
+    bar = (
+        alt.Chart(chart_df)
+        .mark_bar()
+        .encode(
+            x=alt.X(f"{TEAM_COL}:N", sort="-y", title="Équipe", axis=alt.Axis(labelAngle=-60)),
+            y=alt.Y("mean:Q", title=f"Moyenne — {metric_label} (m/90)"),
+            color=alt.Color(
+                "highlight:N",
+                scale=alt.Scale(domain=["FC Versailles", "Other"]),
+                legend=alt.Legend(title="")
+            ),
+            tooltip=[
+                alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
+                alt.Tooltip("rank:Q", title="Rang"),
+                alt.Tooltip("mean:Q", title="Moyenne (m/90)", format=".0f"),
+                alt.Tooltip("z_score:Q", title="Z-score", format=".2f"),
+            ],
         )
-        st.altair_chart(bar, use_container_width=True)
+    )
+    st.altair_chart(bar, use_container_width=True)
 
-        st.subheader("Tableau (ranking + z-score)")
-        show_tbl = bench[[TEAM_COL, "rank", "mean", "z_score"]].head(top_n).copy()
-        st.dataframe(show_tbl, use_container_width=True, height=738)  # ~20 rows visible
+    # =============================================
+    # GRAPHIQUE 2 — Comparaison des 4 paramètres (grouped bar)
+    # =============================================
+    st.subheader("Comparaison des 4 paramètres")
 
-    else:
-        cols4 = list(available_metrics.values())
-        team_stats4 = df_f.groupby(TEAM_COL, as_index=False)[cols4].mean()
-        team_stats4 = clean_team_col(team_stats4, TEAM_COL)
-        team_stats4 = team_stats4[team_stats4[TEAM_COL].astype(str).str.strip().ne(".")]
+    cols4 = list(available_metrics.values())
+    team_stats4 = df_f.groupby(TEAM_COL, as_index=False)[cols4].mean()
+    team_stats4 = clean_team_col(team_stats4, TEAM_COL)
+    team_stats4 = team_stats4[team_stats4[TEAM_COL].astype(str).str.strip().ne(".")]
 
-        # topN déterminé par la métrique choisie
-        team_stats4 = team_stats4.sort_values(metric_col, ascending=False).head(top_n)
+    # topN déterminé par la métrique choisie
+    team_stats4 = team_stats4.sort_values(metric_col, ascending=False).head(top_n)
 
-        folded = team_stats4.melt(
-            id_vars=[TEAM_COL],
-            value_vars=cols4,
-            var_name="Metric",
-            value_name="Value"
+    folded = team_stats4.melt(
+        id_vars=[TEAM_COL],
+        value_vars=cols4,
+        var_name="Metric",
+        value_name="Value"
+    )
+    label_map = {v: k for k, v in available_metrics.items()}
+    folded["MetricLabel"] = folded["Metric"].map(label_map).fillna(folded["Metric"])
+
+    bar4 = (
+        alt.Chart(folded)
+        .mark_bar()
+        .encode(
+            x=alt.X(f"{TEAM_COL}:N", sort="-y", title="Équipe", axis=alt.Axis(labelAngle=-60)),
+            y=alt.Y("Value:Q", title="Mètres / 90"),
+            color=alt.Color("MetricLabel:N", title="Paramètre"),
+            xOffset="MetricLabel:N",  # Grouped bar chart
+            tooltip=[
+                alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
+                alt.Tooltip("MetricLabel:N", title="Paramètre"),
+                alt.Tooltip("Value:Q", title="Valeur (m/90)", format=".0f"),
+            ]
         )
-        label_map = {v: k for k, v in available_metrics.items()}
-        folded["MetricLabel"] = folded["Metric"].map(label_map).fillna(folded["Metric"])
+    )
+    st.altair_chart(bar4, use_container_width=True)
 
-        bar = (
-            alt.Chart(folded)
-            .mark_bar()
-            .encode(
-                x=alt.X(f"{TEAM_COL}:N", sort="-y", title="Équipe", axis=alt.Axis(labelAngle=-60)),
-                y=alt.Y("Value:Q", title="Mètres / 90"),
-                color=alt.Color("MetricLabel:N", title="Paramètre"),
-                tooltip=[
-                    alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
-                    alt.Tooltip("MetricLabel:N", title="Paramètre"),
-                    alt.Tooltip("Value:Q", title="Valeur (m/90)", format=".0f"),
-                ]
-            )
-        )
-        st.altair_chart(bar, use_container_width=True)
+    # =============================================
+    # TABLEAU
+    # =============================================
+    st.subheader("Tableau (ranking + z-score)")
+    show_tbl = bench[[TEAM_COL, "rank", "mean", "z_score"]].head(top_n).copy()
+    st.dataframe(show_tbl, use_container_width=True, height=738)
 
     csv = bench[[TEAM_COL, "rank", "mean", "z_score"]].to_csv(index=False).encode("utf-8")
     st.download_button(
