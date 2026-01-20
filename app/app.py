@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -712,22 +713,52 @@ with tabs[1]:
     scatter_df = scatter_df.dropna(subset=["x_zscore", "y_zscore"])
 
     # Highlight Versailles players
-    scatter_df["highlight"] = scatter_df[TEAM_COL].apply(
+    scatter_df["is_versailles"] = scatter_df[TEAM_COL].apply(
         lambda t: "Versailles" if versailles_team and versailles_team in str(t) else "Autre"
     )
 
-    # Create scatter plot with z-scores
-    scatter = (
-        alt.Chart(scatter_df)
-        .mark_circle(size=80, opacity=0.7)
+    # Split data for layering
+    df_autres = scatter_df[scatter_df["is_versailles"] == "Autre"]
+    df_versailles = scatter_df[scatter_df["is_versailles"] == "Versailles"]
+
+    # Layer 1: Other teams (small, transparent, grey)
+    scatter_autres = (
+        alt.Chart(df_autres)
+        .mark_circle(size=40, opacity=0.25)
         .encode(
-            x=alt.X("x_zscore:Q", title=f"{x_metric_label} (z-score)", scale=alt.Scale(domain=[-3, 3])),
-            y=alt.Y("y_zscore:Q", title=f"{y_metric_label} (z-score)", scale=alt.Scale(domain=[-3, 3])),
-            color=alt.Color(
-                "highlight:N",
-                scale=alt.Scale(domain=["Versailles", "Autre"], range=["#e74c3c", "#95a5a6"]),
-                title="Équipe"
-            ),
+            x=alt.X("x_zscore:Q", title=f"{x_metric_label} (z-score)",
+                    scale=alt.Scale(domain=[-3, 3]),
+                    axis=alt.Axis(grid=False, tickCount=7)),
+            y=alt.Y("y_zscore:Q", title=f"{y_metric_label} (z-score)",
+                    scale=alt.Scale(domain=[-3, 3]),
+                    axis=alt.Axis(grid=False, tickCount=7)),
+            color=alt.value("#6c757d"),
+            tooltip=[
+                alt.Tooltip(f"{PLAYER_COL}:N", title="Joueur"),
+                alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
+                alt.Tooltip(f"{x_col}:Q", title=x_metric_label, format=".0f"),
+                alt.Tooltip(f"{y_col}:Q", title=y_metric_label, format=".0f"),
+            ]
+        )
+    )
+
+    # Layer 2: Versailles players (larger, with white border)
+    scatter_versailles_border = (
+        alt.Chart(df_versailles)
+        .mark_circle(size=180, color="white")
+        .encode(
+            x=alt.X("x_zscore:Q"),
+            y=alt.Y("y_zscore:Q"),
+        )
+    )
+
+    scatter_versailles = (
+        alt.Chart(df_versailles)
+        .mark_circle(size=120, opacity=1)
+        .encode(
+            x=alt.X("x_zscore:Q"),
+            y=alt.Y("y_zscore:Q"),
+            color=alt.value("#e74c3c"),
             tooltip=[
                 alt.Tooltip(f"{PLAYER_COL}:N", title="Joueur"),
                 alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
@@ -739,22 +770,49 @@ with tabs[1]:
         )
     )
 
-    # Add horizontal line at y=0 (average)
+    # Axis lines (dashed, white, thicker)
     hline = (
         alt.Chart(pd.DataFrame({"y": [0]}))
-        .mark_rule(color="white", strokeWidth=1.5)
+        .mark_rule(color="white", strokeWidth=2, strokeDash=[5, 5])
         .encode(y="y:Q")
     )
 
-    # Add vertical line at x=0 (average)
     vline = (
         alt.Chart(pd.DataFrame({"x": [0]}))
-        .mark_rule(color="white", strokeWidth=1.5)
+        .mark_rule(color="white", strokeWidth=2, strokeDash=[5, 5])
         .encode(x="x:Q")
     )
 
-    # Combine scatter + lines
-    chart = (scatter + hline + vline).properties(height=500)
+    # Quadrant labels
+    labels_data = pd.DataFrame({
+        "x": [2.2, -2.2, 2.2, -2.2],
+        "y": [2.5, 2.5, -2.5, -2.5],
+        "label": ["↗ Elite", "↖ Intensité faible", "↘ Volume faible", "↙ En dessous"]
+    })
+
+    quadrant_labels = (
+        alt.Chart(labels_data)
+        .mark_text(fontSize=11, fontWeight="bold", opacity=0.6)
+        .encode(
+            x=alt.X("x:Q"),
+            y=alt.Y("y:Q"),
+            text="label:N",
+            color=alt.value("#ffffff")
+        )
+    )
+
+    # Combine all layers
+    chart = (
+        scatter_autres +
+        hline + vline +
+        scatter_versailles_border + scatter_versailles +
+        quadrant_labels
+    ).properties(
+        height=550
+    ).configure_view(
+        strokeWidth=0  # Remove border around chart
+    )
+
     st.altair_chart(chart, use_container_width=True)
 
     st.markdown("---")
@@ -811,6 +869,178 @@ with tabs[1]:
 
         if MINUTES_COL in p_df.columns:
             st.caption(f"Minutes (moyenne sur les lignes filtrées) : {safe_metric_display(p_df, MINUTES_COL, unit='min', decimals=0)}")
+
+    # =============================================
+    # RADAR CHART — Profil du joueur
+    # =============================================
+    st.subheader("Profil du joueur (percentiles)")
+    st.caption("Valeurs en percentile par rapport à tous les joueurs filtrés (100 = meilleur)")
+
+    # Calculate player averages
+    radar_metrics = {
+        ">15 km/h": "HighIntensity15plus_per90",
+        "20-25 km/h": "HiSpeedRunDist_per90",
+        ">25 km/h": "SprintDist_per90",
+        "Distance totale": "DistanceRun_per90"
+    }
+
+    # Get player's mean values
+    player_values = {}
+    for label, col in radar_metrics.items():
+        if col in p_df.columns:
+            player_values[label] = p_df[col].mean()
+
+    # Calculate percentiles compared to all filtered players
+    all_players_agg = df_f.groupby(PLAYER_COL, as_index=False).agg({
+        col: "mean" for col in radar_metrics.values() if col in df_f.columns
+    })
+
+    percentiles = {}
+    for label, col in radar_metrics.items():
+        if col in all_players_agg.columns and label in player_values:
+            all_vals = all_players_agg[col].dropna().values
+            if len(all_vals) > 0:
+                percentiles[label] = (all_vals < player_values[label]).sum() / len(all_vals) * 100
+            else:
+                percentiles[label] = 50
+
+    if percentiles:
+        # Create radar chart data
+        categories = list(percentiles.keys())
+        values = list(percentiles.values())
+
+        # Close the radar (repeat first value)
+        categories_closed = categories + [categories[0]]
+        values_closed = values + [values[0]]
+
+        # Create angles for each category
+        n = len(categories)
+        angles = [i * 360 / n for i in range(n)] + [0]  # Close the loop
+
+        # Create DataFrame for radar
+        radar_df = pd.DataFrame({
+            "category": categories_closed,
+            "value": values_closed,
+            "angle": angles
+        })
+
+        # Convert to radial coordinates
+        radar_df["x"] = radar_df["value"] * np.cos(np.radians(90 - radar_df["angle"]))
+        radar_df["y"] = radar_df["value"] * np.sin(np.radians(90 - radar_df["angle"]))
+
+        # Create reference circles (25, 50, 75, 100 percentile)
+        circle_data = []
+        for r in [25, 50, 75, 100]:
+            for a in range(0, 361, 5):
+                circle_data.append({
+                    "radius": r,
+                    "angle": a,
+                    "x": r * np.cos(np.radians(90 - a)),
+                    "y": r * np.sin(np.radians(90 - a))
+                })
+        circle_df = pd.DataFrame(circle_data)
+
+        # Reference circles
+        circles = (
+            alt.Chart(circle_df)
+            .mark_line(opacity=0.3, color="white", strokeWidth=1)
+            .encode(
+                x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=[-120, 120])),
+                y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=[-120, 120])),
+                detail="radius:N"
+            )
+        )
+
+        # Axis lines from center to each category
+        axis_data = []
+        for i, cat in enumerate(categories):
+            angle = i * 360 / n
+            axis_data.append({"x1": 0, "y1": 0,
+                             "x2": 105 * np.cos(np.radians(90 - angle)),
+                             "y2": 105 * np.sin(np.radians(90 - angle)),
+                             "category": cat})
+        axis_df = pd.DataFrame(axis_data)
+
+        axes = (
+            alt.Chart(axis_df)
+            .mark_rule(color="white", opacity=0.3, strokeWidth=1)
+            .encode(
+                x="x1:Q", y="y1:Q",
+                x2="x2:Q", y2="y2:Q"
+            )
+        )
+
+        # Category labels
+        label_data = []
+        for i, cat in enumerate(categories):
+            angle = i * 360 / n
+            label_data.append({
+                "category": cat,
+                "x": 115 * np.cos(np.radians(90 - angle)),
+                "y": 115 * np.sin(np.radians(90 - angle))
+            })
+        label_df = pd.DataFrame(label_data)
+
+        labels = (
+            alt.Chart(label_df)
+            .mark_text(fontSize=12, fontWeight="bold", color="white")
+            .encode(
+                x="x:Q",
+                y="y:Q",
+                text="category:N"
+            )
+        )
+
+        # Player's radar area
+        area = (
+            alt.Chart(radar_df)
+            .mark_area(opacity=0.4, color="#e74c3c", line={"color": "#e74c3c", "strokeWidth": 2})
+            .encode(
+                x=alt.X("x:Q", axis=None),
+                y=alt.Y("y:Q", axis=None),
+                order="angle:Q"
+            )
+        )
+
+        # Player's radar line
+        line = (
+            alt.Chart(radar_df)
+            .mark_line(color="#e74c3c", strokeWidth=3)
+            .encode(
+                x="x:Q",
+                y="y:Q",
+                order="angle:Q"
+            )
+        )
+
+        # Points at each vertex
+        points = (
+            alt.Chart(radar_df[:-1])  # Exclude the closing point
+            .mark_circle(size=100, color="#e74c3c")
+            .encode(
+                x="x:Q",
+                y="y:Q",
+                tooltip=[
+                    alt.Tooltip("category:N", title="Métrique"),
+                    alt.Tooltip("value:Q", title="Percentile", format=".0f")
+                ]
+            )
+        )
+
+        # Combine all layers
+        radar_chart = (
+            circles + axes + area + line + points + labels
+        ).properties(
+            width=400,
+            height=400
+        ).configure_view(
+            strokeWidth=0
+        )
+
+        # Center the chart
+        col_left, col_center, col_right = st.columns([1, 2, 1])
+        with col_center:
+            st.altair_chart(radar_chart, use_container_width=True)
 
     if MATCH_COL in p_df.columns:
         st.subheader("Détail (par match)")
