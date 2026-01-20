@@ -560,28 +560,31 @@ with tabs[0]:
     st.altair_chart(bar, use_container_width=True)
 
     # =============================================
-    # GRAPHIQUE 2 — Comparaison des 4 paramètres (grouped bar)
+    # GRAPHIQUE 2 — Comparaison des 3 paramètres d'intensité (grouped bar)
     # =============================================
-    st.subheader("Comparaison des 4 paramètres")
+    st.subheader("Comparaison des paramètres d'intensité")
 
-    cols4 = list(available_metrics.values())
-    team_stats4 = df_f.groupby(TEAM_COL, as_index=False)[cols4].mean()
-    team_stats4 = clean_team_col(team_stats4, TEAM_COL)
-    team_stats4 = team_stats4[team_stats4[TEAM_COL].astype(str).str.strip().ne(".")]
+    # Only use intensity metrics (exclude Distance totale which has different scale)
+    intensity_metrics = {k: v for k, v in available_metrics.items() if "Distance totale" not in k}
+    cols3 = list(intensity_metrics.values())
+
+    team_stats3 = df_f.groupby(TEAM_COL, as_index=False)[cols3].mean()
+    team_stats3 = clean_team_col(team_stats3, TEAM_COL)
+    team_stats3 = team_stats3[team_stats3[TEAM_COL].astype(str).str.strip().ne(".")]
 
     # topN déterminé par la métrique choisie
-    team_stats4 = team_stats4.sort_values(metric_col, ascending=False).head(top_n)
+    team_stats3 = team_stats3.sort_values(cols3[0], ascending=False).head(top_n)
 
-    folded = team_stats4.melt(
+    folded = team_stats3.melt(
         id_vars=[TEAM_COL],
-        value_vars=cols4,
+        value_vars=cols3,
         var_name="Metric",
         value_name="Value"
     )
-    label_map = {v: k for k, v in available_metrics.items()}
+    label_map = {v: k for k, v in intensity_metrics.items()}
     folded["MetricLabel"] = folded["Metric"].map(label_map).fillna(folded["Metric"])
 
-    bar4 = (
+    bar3 = (
         alt.Chart(folded)
         .mark_bar()
         .encode(
@@ -596,7 +599,7 @@ with tabs[0]:
             ]
         )
     )
-    st.altair_chart(bar4, use_container_width=True)
+    st.altair_chart(bar3, use_container_width=True)
 
     # =============================================
     # TABLEAU
