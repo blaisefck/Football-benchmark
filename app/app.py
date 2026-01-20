@@ -679,6 +679,58 @@ with tabs[1]:
 
     st.markdown("---")
 
+    # =============================================
+    # SCATTER PLOT — Comparaison des joueurs
+    # =============================================
+    st.subheader("Scatter Plot — Comparaison des joueurs")
+
+    scatter_col1, scatter_col2 = st.columns(2)
+    metric_options = list(available_metrics.keys())
+
+    with scatter_col1:
+        x_metric_label = st.selectbox("Axe X", metric_options, index=0, key="scatter_x")
+    with scatter_col2:
+        # Default Y to second metric if available
+        default_y_idx = 1 if len(metric_options) > 1 else 0
+        y_metric_label = st.selectbox("Axe Y", metric_options, index=default_y_idx, key="scatter_y")
+
+    x_col = available_metrics[x_metric_label]
+    y_col = available_metrics[y_metric_label]
+
+    # Aggregate by player (mean across games)
+    scatter_df = df_f.groupby([PLAYER_COL, TEAM_COL], as_index=False).agg({
+        x_col: "mean",
+        y_col: "mean"
+    }).dropna()
+
+    # Highlight Versailles players
+    scatter_df["highlight"] = scatter_df[TEAM_COL].apply(
+        lambda t: "Versailles" if versailles_team and versailles_team in str(t) else "Autre"
+    )
+
+    scatter = (
+        alt.Chart(scatter_df)
+        .mark_circle(size=80)
+        .encode(
+            x=alt.X(f"{x_col}:Q", title=x_metric_label),
+            y=alt.Y(f"{y_col}:Q", title=y_metric_label),
+            color=alt.Color(
+                "highlight:N",
+                scale=alt.Scale(domain=["Versailles", "Autre"], range=["#e74c3c", "#3498db"]),
+                title="Équipe"
+            ),
+            tooltip=[
+                alt.Tooltip(f"{PLAYER_COL}:N", title="Joueur"),
+                alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
+                alt.Tooltip(f"{x_col}:Q", title=x_metric_label, format=".0f"),
+                alt.Tooltip(f"{y_col}:Q", title=y_metric_label, format=".0f"),
+            ]
+        )
+    )
+    st.altair_chart(scatter, use_container_width=True)
+
+    st.markdown("---")
+
     st.subheader("Fiche joueur (détails)")
     player_list = sorted(df_f[PLAYER_COL].dropna().unique().tolist())
 
