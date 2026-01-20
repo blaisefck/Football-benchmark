@@ -4,6 +4,7 @@ from pathlib import Path
 import altair as alt
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -871,7 +872,7 @@ with tabs[1]:
             st.caption(f"Minutes (moyenne sur les lignes filtrées) : {safe_metric_display(p_df, MINUTES_COL, unit='min', decimals=0)}")
 
     # =============================================
-    # RADAR CHART — Profil du joueur
+    # RADAR CHART — Profil du joueur (avec Plotly)
     # =============================================
     st.subheader("Profil du joueur (percentiles)")
     st.caption("Valeurs en percentile par rapport à tous les joueurs filtrés (100 = meilleur)")
@@ -905,142 +906,54 @@ with tabs[1]:
                 percentiles[label] = 50
 
     if percentiles:
-        # Create radar chart data
         categories = list(percentiles.keys())
         values = list(percentiles.values())
 
-        # Close the radar (repeat first value)
-        categories_closed = categories + [categories[0]]
-        values_closed = values + [values[0]]
+        # Create Plotly radar chart
+        fig = go.Figure()
 
-        # Create angles for each category
-        n = len(categories)
-        angles = [i * 360 / n for i in range(n)] + [0]  # Close the loop
+        # Add player trace
+        fig.add_trace(go.Scatterpolar(
+            r=values + [values[0]],  # Close the shape
+            theta=categories + [categories[0]],
+            fill='toself',
+            fillcolor='rgba(231, 76, 60, 0.4)',
+            line=dict(color='#e74c3c', width=3),
+            marker=dict(size=10, color='#e74c3c'),
+            name=chosen_player,
+            hovertemplate="<b>%{theta}</b><br>Percentile: %{r:.0f}<extra></extra>"
+        ))
 
-        # Create DataFrame for radar
-        radar_df = pd.DataFrame({
-            "category": categories_closed,
-            "value": values_closed,
-            "angle": angles
-        })
-
-        # Convert to radial coordinates
-        radar_df["x"] = radar_df["value"] * np.cos(np.radians(90 - radar_df["angle"]))
-        radar_df["y"] = radar_df["value"] * np.sin(np.radians(90 - radar_df["angle"]))
-
-        # Create reference circles (25, 50, 75, 100 percentile)
-        circle_data = []
-        for r in [25, 50, 75, 100]:
-            for a in range(0, 361, 5):
-                circle_data.append({
-                    "radius": r,
-                    "angle": a,
-                    "x": r * np.cos(np.radians(90 - a)),
-                    "y": r * np.sin(np.radians(90 - a))
-                })
-        circle_df = pd.DataFrame(circle_data)
-
-        # Reference circles
-        circles = (
-            alt.Chart(circle_df)
-            .mark_line(opacity=0.3, color="white", strokeWidth=1)
-            .encode(
-                x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=[-120, 120])),
-                y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=[-120, 120])),
-                detail="radius:N"
-            )
-        )
-
-        # Axis lines from center to each category
-        axis_data = []
-        for i, cat in enumerate(categories):
-            angle = i * 360 / n
-            axis_data.append({"x1": 0, "y1": 0,
-                             "x2": 105 * np.cos(np.radians(90 - angle)),
-                             "y2": 105 * np.sin(np.radians(90 - angle)),
-                             "category": cat})
-        axis_df = pd.DataFrame(axis_data)
-
-        axes = (
-            alt.Chart(axis_df)
-            .mark_rule(color="white", opacity=0.3, strokeWidth=1)
-            .encode(
-                x="x1:Q", y="y1:Q",
-                x2="x2:Q", y2="y2:Q"
-            )
-        )
-
-        # Category labels
-        label_data = []
-        for i, cat in enumerate(categories):
-            angle = i * 360 / n
-            label_data.append({
-                "category": cat,
-                "x": 115 * np.cos(np.radians(90 - angle)),
-                "y": 115 * np.sin(np.radians(90 - angle))
-            })
-        label_df = pd.DataFrame(label_data)
-
-        labels = (
-            alt.Chart(label_df)
-            .mark_text(fontSize=12, fontWeight="bold", color="white")
-            .encode(
-                x="x:Q",
-                y="y:Q",
-                text="category:N"
-            )
-        )
-
-        # Player's radar area
-        area = (
-            alt.Chart(radar_df)
-            .mark_area(opacity=0.4, color="#e74c3c", line={"color": "#e74c3c", "strokeWidth": 2})
-            .encode(
-                x=alt.X("x:Q", axis=None),
-                y=alt.Y("y:Q", axis=None),
-                order="angle:Q"
-            )
-        )
-
-        # Player's radar line
-        line = (
-            alt.Chart(radar_df)
-            .mark_line(color="#e74c3c", strokeWidth=3)
-            .encode(
-                x="x:Q",
-                y="y:Q",
-                order="angle:Q"
-            )
-        )
-
-        # Points at each vertex
-        points = (
-            alt.Chart(radar_df[:-1])  # Exclude the closing point
-            .mark_circle(size=100, color="#e74c3c")
-            .encode(
-                x="x:Q",
-                y="y:Q",
-                tooltip=[
-                    alt.Tooltip("category:N", title="Métrique"),
-                    alt.Tooltip("value:Q", title="Percentile", format=".0f")
-                ]
-            )
-        )
-
-        # Combine all layers
-        radar_chart = (
-            circles + axes + area + line + points + labels
-        ).properties(
-            width=400,
-            height=400
-        ).configure_view(
-            strokeWidth=0
+        # Update layout for dark theme
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100],
+                    tickvals=[25, 50, 75, 100],
+                    ticktext=['25', '50', '75', '100'],
+                    gridcolor='rgba(255,255,255,0.3)',
+                    linecolor='rgba(255,255,255,0.3)',
+                    tickfont=dict(color='white', size=10)
+                ),
+                angularaxis=dict(
+                    gridcolor='rgba(255,255,255,0.3)',
+                    linecolor='rgba(255,255,255,0.3)',
+                    tickfont=dict(color='white', size=12)
+                ),
+                bgcolor='rgba(0,0,0,0)'
+            ),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            showlegend=False,
+            margin=dict(l=80, r=80, t=40, b=40),
+            height=450
         )
 
         # Center the chart
         col_left, col_center, col_right = st.columns([1, 2, 1])
         with col_center:
-            st.altair_chart(radar_chart, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
 
     if MATCH_COL in p_df.columns:
         st.subheader("Détail (par match)")
