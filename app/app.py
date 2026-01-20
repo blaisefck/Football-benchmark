@@ -680,9 +680,10 @@ with tabs[1]:
     st.markdown("---")
 
     # =============================================
-    # SCATTER PLOT — Comparaison des joueurs
+    # SCATTER PLOT — Comparaison des joueurs (z-scores)
     # =============================================
     st.subheader("Scatter Plot — Comparaison des joueurs")
+    st.caption("Axes en z-score : 0 = moyenne de la ligue, positif = au-dessus de la moyenne")
 
     scatter_col1, scatter_col2 = st.columns(2)
     metric_options = list(available_metrics.keys())
@@ -703,20 +704,28 @@ with tabs[1]:
         y_col: "mean"
     }).dropna()
 
+    # Compute z-scores
+    scatter_df["x_zscore"] = zscore(scatter_df[x_col])
+    scatter_df["y_zscore"] = zscore(scatter_df[y_col])
+
+    # Remove rows with NaN z-scores
+    scatter_df = scatter_df.dropna(subset=["x_zscore", "y_zscore"])
+
     # Highlight Versailles players
     scatter_df["highlight"] = scatter_df[TEAM_COL].apply(
         lambda t: "Versailles" if versailles_team and versailles_team in str(t) else "Autre"
     )
 
+    # Create scatter plot with z-scores
     scatter = (
         alt.Chart(scatter_df)
-        .mark_circle(size=80)
+        .mark_circle(size=80, opacity=0.7)
         .encode(
-            x=alt.X(f"{x_col}:Q", title=x_metric_label),
-            y=alt.Y(f"{y_col}:Q", title=y_metric_label),
+            x=alt.X("x_zscore:Q", title=f"{x_metric_label} (z-score)", scale=alt.Scale(domain=[-3, 3])),
+            y=alt.Y("y_zscore:Q", title=f"{y_metric_label} (z-score)", scale=alt.Scale(domain=[-3, 3])),
             color=alt.Color(
                 "highlight:N",
-                scale=alt.Scale(domain=["Versailles", "Autre"], range=["#e74c3c", "#3498db"]),
+                scale=alt.Scale(domain=["Versailles", "Autre"], range=["#e74c3c", "#95a5a6"]),
                 title="Équipe"
             ),
             tooltip=[
@@ -724,10 +733,29 @@ with tabs[1]:
                 alt.Tooltip(f"{TEAM_COL}:N", title="Équipe"),
                 alt.Tooltip(f"{x_col}:Q", title=x_metric_label, format=".0f"),
                 alt.Tooltip(f"{y_col}:Q", title=y_metric_label, format=".0f"),
+                alt.Tooltip("x_zscore:Q", title="Z-score X", format=".2f"),
+                alt.Tooltip("y_zscore:Q", title="Z-score Y", format=".2f"),
             ]
         )
     )
-    st.altair_chart(scatter, use_container_width=True)
+
+    # Add horizontal line at y=0 (average)
+    hline = (
+        alt.Chart(pd.DataFrame({"y": [0]}))
+        .mark_rule(color="black", strokeWidth=1)
+        .encode(y="y:Q")
+    )
+
+    # Add vertical line at x=0 (average)
+    vline = (
+        alt.Chart(pd.DataFrame({"x": [0]}))
+        .mark_rule(color="black", strokeWidth=1)
+        .encode(x="x:Q")
+    )
+
+    # Combine scatter + lines
+    chart = (scatter + hline + vline).properties(height=500)
+    st.altair_chart(chart, use_container_width=True)
 
     st.markdown("---")
 
