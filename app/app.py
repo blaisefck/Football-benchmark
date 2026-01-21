@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
+
 # Config
 
 st.set_page_config(page_title="Football Benchmark Dashboard", layout="wide")
@@ -442,7 +443,6 @@ with tabs[0]:
 
     focus_placeholder = st.empty()
 
-
     # FILTRES
 
     f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.6])
@@ -529,6 +529,7 @@ with tabs[0]:
 
     top_n = st.slider("Top N équipes", 5, 30, 20, 1, key="bm_topn")
 
+
     # GRAPHIQUE 1 — Paramètre sélectionné
 
     st.subheader(f"Graphique — {metric_label}")
@@ -560,7 +561,22 @@ with tabs[0]:
     st.altair_chart(bar, use_container_width=True)
 
 
-    # GRAPHIQUE 2 — Comparaison des 3 paramètres d'intensité (grouped bar)
+    # TABLEAU (moved up)
+
+    st.subheader("Tableau (ranking + z-score)")
+    show_tbl = bench[[TEAM_COL, "rank", "mean", "z_score"]].head(top_n).copy()
+    st.dataframe(show_tbl, use_container_width=True, height=738)
+
+    csv = bench[[TEAM_COL, "rank", "mean", "z_score"]].to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "Télécharger le benchmark (CSV)",
+        data=csv,
+        file_name=f"benchmark_{metric_col}_{selected_league}.csv".replace(" ", "_"),
+        mime="text/csv"
+    )
+
+
+    # GRAPHIQUE 2 — Comparaison des 3 paramètres d'intensité (grouped bar) (moved down)
 
     st.subheader("Comparaison des paramètres d'intensité")
 
@@ -602,26 +618,11 @@ with tabs[0]:
     st.altair_chart(bar3, use_container_width=True)
 
 
-    # TABLEAU
-
-    st.subheader("Tableau (ranking + z-score)")
-    show_tbl = bench[[TEAM_COL, "rank", "mean", "z_score"]].head(top_n).copy()
-    st.dataframe(show_tbl, use_container_width=True, height=738)
-
-    csv = bench[[TEAM_COL, "rank", "mean", "z_score"]].to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "Télécharger le benchmark (CSV)",
-        data=csv,
-        file_name=f"benchmark_{metric_col}_{selected_league}.csv".replace(" ", "_"),
-        mime="text/csv"
-    )
-
-
 
 # TAB 2 — Joueurs (table + fiche joueur)
 
 with tabs[1]:
-    st.title("Joueurs — table + focus individuel")
+    st.title("Joueurs")
 
     f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.6])
 
@@ -706,7 +707,7 @@ with tabs[1]:
     st.markdown("---")
 
 
-    # Comparaison des joueurs (z-scores)
+    # SCATTER PLOT — Comparaison des joueurs (z-scores)
 
     st.subheader("Scatter Plot — Comparaison des joueurs")
     st.caption("Axes en z-score : 0 = moyenne de la ligue, positif = au-dessus de la moyenne")
