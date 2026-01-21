@@ -8,9 +8,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
-# -----------------------------
 # Config
-# -----------------------------
+
 st.set_page_config(page_title="Football Benchmark Dashboard", layout="wide")
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -44,9 +43,9 @@ TEAM_HI_20_25_RAW = "HiSpeedRunDist"
 TEAM_SPRINT_25_RAW = "SprintDist"
 
 
-# -----------------------------
+
 # Helpers (nettoyage + robustesse)
-# -----------------------------
+
 def normalize_columns(df: pd.DataFrame, target_cols: dict = None) -> pd.DataFrame:
     """
     ✅ FIX: Normalize column names to handle mixed case in team files.
@@ -181,9 +180,9 @@ def ensure_meters_team_distance(df: pd.DataFrame, col: str) -> pd.DataFrame:
     return df
 
 
-# -----------------------------
+
 # Load data (players prepped)
-# -----------------------------
+
 @st.cache_data
 def load_players(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -284,9 +283,9 @@ if len(available_metrics) < 3:
     st.stop()
 
 
-# -----------------------------
+
 # Load team raw (Team Match)
-# -----------------------------
+
 @st.cache_data
 def load_team_raw(path: Path, comp_name: str) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -426,26 +425,26 @@ def build_match_selector_meta(df_comp: pd.DataFrame) -> pd.DataFrame:
     return meta
 
 
-# -----------------------------
+
 # UI — Tabs
-# -----------------------------
-tabs = st.tabs(["📊 Benchmark", "👤 Joueurs", "🆚 Team Match"])
+
+tabs = st.tabs(["Benchmark", "Joueurs", "Team Match"])
 
 
-# ==========================================================
+
 # TAB 1 — Benchmark
-# ==========================================================
+
 with tabs[0]:
     st.title("Benchmark — intensité & volume (par 90)")
 
-    # =============================================
+
     # FOCUS VERSAILLES — EN HAUT (placeholder)
-    # =============================================
+
     focus_placeholder = st.empty()
 
-    # =============================================
+
     # FILTRES
-    # =============================================
+
     f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.6])
 
     leagues = sorted(df_players_all[LEAGUE_COL].dropna().unique().tolist())
@@ -484,9 +483,9 @@ with tabs[0]:
     if min_minutes is not None and MINUTES_COL in df_f.columns:
         df_f = df_f[df_f[MINUTES_COL].notna() & (df_f[MINUTES_COL] >= min_minutes)]
 
-    # =============================================
+
     # FOCUS VERSAILLES — Affiché dans le placeholder en haut
-    # =============================================
+
     if versailles_team:
         focus_df = df_players_all[df_players_all[TEAM_COL] == versailles_team].copy()
         if selected_league != "All":
@@ -530,9 +529,8 @@ with tabs[0]:
 
     top_n = st.slider("Top N équipes", 5, 30, 20, 1, key="bm_topn")
 
-    # =============================================
     # GRAPHIQUE 1 — Paramètre sélectionné
-    # =============================================
+
     st.subheader(f"Graphique — {metric_label}")
 
     chart_df = bench.head(top_n).copy()
@@ -561,9 +559,9 @@ with tabs[0]:
     )
     st.altair_chart(bar, use_container_width=True)
 
-    # =============================================
+
     # GRAPHIQUE 2 — Comparaison des 3 paramètres d'intensité (grouped bar)
-    # =============================================
+
     st.subheader("Comparaison des paramètres d'intensité")
 
     # Only use intensity metrics (exclude Distance totale which has different scale)
@@ -603,9 +601,9 @@ with tabs[0]:
     )
     st.altair_chart(bar3, use_container_width=True)
 
-    # =============================================
+
     # TABLEAU
-    # =============================================
+
     st.subheader("Tableau (ranking + z-score)")
     show_tbl = bench[[TEAM_COL, "rank", "mean", "z_score"]].head(top_n).copy()
     st.dataframe(show_tbl, use_container_width=True, height=738)
@@ -619,9 +617,9 @@ with tabs[0]:
     )
 
 
-# ==========================================================
+
 # TAB 2 — Joueurs (table + fiche joueur)
-# ==========================================================
+
 with tabs[1]:
     st.title("Joueurs — table + focus individuel")
 
@@ -663,27 +661,53 @@ with tabs[1]:
         st.info("Aucun joueur avec ces filtres.")
         st.stop()
 
+    # Aggregate by player (one row per player with mean stats)
+    # First, build aggregation dict for numeric columns
+    agg_dict = {}
+    agg_dict[TEAM_COL] = "first"
+    agg_dict[LEAGUE_COL] = "first"
+
+    if MINUTES_COL in df_f.columns:
+        agg_dict[MINUTES_COL] = "sum"
+
+    for col in ["HighIntensity15plus_per90", "HiSpeedRunDist_per90", "SprintDist_per90", "DistanceRun_per90"]:
+        if col in df_f.columns:
+            agg_dict[col] = "mean"
+
+    df_agg = df_f.groupby(PLAYER_COL, as_index=False).agg(agg_dict)
+
+    # Add match count
+    match_counts = df_f.groupby(PLAYER_COL).size().reset_index(name="Matchs")
+    df_agg = df_agg.merge(match_counts, on=PLAYER_COL, how="left")
+
+    # Add positions (concatenated)
+    if POSITION_COL in df_f.columns:
+        positions = df_f.groupby(PLAYER_COL)[POSITION_COL].apply(
+            lambda x: ", ".join(sorted(set(x.dropna().astype(str))))
+        ).reset_index()
+        df_agg = df_agg.merge(positions, on=PLAYER_COL, how="left")
+
     cols_show = [
-        PLAYER_COL, TEAM_COL, POSITION_COL, LEAGUE_COL,
-        MINUTES_COL if MINUTES_COL in df_f.columns else None,
-        "HighIntensity15plus_per90" if "HighIntensity15plus_per90" in df_f.columns else None,
-        "HiSpeedRunDist_per90" if "HiSpeedRunDist_per90" in df_f.columns else None,
-        "SprintDist_per90" if "SprintDist_per90" in df_f.columns else None,
-        "DistanceRun_per90" if "DistanceRun_per90" in df_f.columns else None,
+        PLAYER_COL, TEAM_COL, LEAGUE_COL, "Matchs",
+        MINUTES_COL if MINUTES_COL in df_agg.columns else None,
+        "HighIntensity15plus_per90" if "HighIntensity15plus_per90" in df_agg.columns else None,
+        "HiSpeedRunDist_per90" if "HiSpeedRunDist_per90" in df_agg.columns else None,
+        "SprintDist_per90" if "SprintDist_per90" in df_agg.columns else None,
+        "DistanceRun_per90" if "DistanceRun_per90" in df_agg.columns else None,
     ]
-    cols_show = [c for c in cols_show if c is not None and c in df_f.columns]
+    cols_show = [c for c in cols_show if c is not None and c in df_agg.columns]
 
     st.subheader("Table joueurs")
     st.dataframe(
-        df_f[cols_show].sort_values(metric_col, ascending=False),
+        df_agg[cols_show].sort_values(metric_col, ascending=False),
         use_container_width=True
     )
 
     st.markdown("---")
 
-    # =============================================
-    # SCATTER PLOT — Comparaison des joueurs (z-scores)
-    # =============================================
+
+    # Comparaison des joueurs (z-scores)
+
     st.subheader("Scatter Plot — Comparaison des joueurs")
     st.caption("Axes en z-score : 0 = moyenne de la ligue, positif = au-dessus de la moyenne")
 
@@ -871,11 +895,11 @@ with tabs[1]:
         if MINUTES_COL in p_df.columns:
             st.caption(f"Minutes (moyenne sur les lignes filtrées) : {safe_metric_display(p_df, MINUTES_COL, unit='min', decimals=0)}")
 
-    # =============================================
+
     # RADAR CHART — Profil du joueur (avec Plotly)
-    # =============================================
-    st.subheader("Profil du joueur (percentiles)")
-    st.caption("Valeurs en percentile par rapport à tous les joueurs filtrés (100 = meilleur)")
+
+    st.subheader("Profil du joueur")
+
 
     # Calculate player averages
     radar_metrics = {
@@ -973,9 +997,9 @@ with tabs[1]:
         st.info("Colonne gameId absente côté joueurs → pas de détail par match disponible.")
 
 
-# ==========================================================
-# TAB 3 — Team Match (Option B = fichiers équipes bruts)
-# ==========================================================
+
+# TAB 3 — Team Match (fichiers équipes bruts)
+
 with tabs[2]:
     st.title("Team Match — comparaison match")
 
@@ -990,9 +1014,9 @@ with tabs[2]:
 
     df_team_all = clean_team_col(df_team_all, TEAM_COL)
 
-    # =============================================
+
     # FILTRES
-    # =============================================
+
     c1, c2, c3 = st.columns([1.2, 1.5, 2.3])
 
     with c1:
@@ -1041,9 +1065,9 @@ with tabs[2]:
 
     st.markdown("---")
 
-    # =============================================
+
     # CALCULATE RANKINGS FOR SELECTED TEAM (across all their matches)
-    # =============================================
+
     # Aggregate stats per match for the selected team
     team_match_stats = (
         df_team_filtered.groupby(TEAM_MATCH_COL_RAW, as_index=False)
@@ -1073,9 +1097,9 @@ with tabs[2]:
             "sprint": row["rank_sprint"]
         }
 
-    # =============================================
+
     # HELPER: Get match result for selected team
-    # =============================================
+
     def get_match_result(game_id, team_name):
         """Returns 'win', 'draw', 'loss' or None"""
         match_data = df_comp[
@@ -1093,9 +1117,9 @@ with tabs[2]:
             return "loss"
         return None
 
-    # =============================================
+
     # RENDER MATCH CARD (compact version)
-    # =============================================
+
     def render_match_card(game_id, match_label, container):
         with container:
             # Get match data for both teams
@@ -1182,9 +1206,9 @@ with tabs[2]:
                     unsafe_allow_html=True
                 )
 
-    # =============================================
-    # DISPLAY MATCHES (2 per row)
-    # =============================================
+
+    # DISPLAY MATCHES
+
     if chosen_label == "Tous les matchs":
         st.subheader(f"Tous les matchs de {selected_team} ({n_matches} matchs)")
 
