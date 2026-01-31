@@ -434,9 +434,9 @@ def build_match_selector_meta(df_comp: pd.DataFrame) -> pd.DataFrame:
 tabs = st.tabs(["📊 Benchmark", "👤 Joueurs", "🆚 Team Match"])
 
 
- =============
+
 # TAB 1 — Benchmark
- =============
+
 with tabs[0]:
     st.title("Benchmark — intensité & volume (par 90)")
 
