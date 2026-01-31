@@ -1,6 +1,5 @@
 import re
 from pathlib import Path
-
 import altair as alt
 import numpy as np
 import pandas as pd
@@ -324,6 +323,9 @@ def load_team_raw(path: Path, comp_name: str) -> pd.DataFrame:
 
     df = df[df[TEAM_MINUTES_COL_RAW].notna() & (df[TEAM_MINUTES_COL_RAW] > 0)]
 
+    # ✅ FIX: Filter out matches with missing GPS data (DistanceRun = 0)
+    df = df[df[TEAM_DIST_TOTAL_RAW].notna() & (df[TEAM_DIST_TOTAL_RAW] > 0)]
+
     # ✅ CORRECTION UNITÉS: DistanceRun souvent en km
     df = ensure_meters_team_distance(df, TEAM_DIST_TOTAL_RAW)
 
@@ -429,12 +431,12 @@ def build_match_selector_meta(df_comp: pd.DataFrame) -> pd.DataFrame:
 
 # UI — Tabs
 
-tabs = st.tabs(["Benchmark", "Joueurs", "Team Match"])
+tabs = st.tabs(["📊 Benchmark", "👤 Joueurs", "🆚 Team Match"])
 
 
-
+ =============
 # TAB 1 — Benchmark
-
+ =============
 with tabs[0]:
     st.title("Benchmark — intensité & volume (par 90)")
 
@@ -442,6 +444,7 @@ with tabs[0]:
     # FOCUS VERSAILLES — EN HAUT (placeholder)
 
     focus_placeholder = st.empty()
+
 
     # FILTRES
 
@@ -622,7 +625,7 @@ with tabs[0]:
 # TAB 2 — Joueurs (table + fiche joueur)
 
 with tabs[1]:
-    st.title("Joueurs")
+    st.title("Joueurs — table + focus individuel")
 
     f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.6])
 
@@ -899,8 +902,8 @@ with tabs[1]:
 
     # RADAR CHART — Profil du joueur (avec Plotly)
 
-    st.subheader("Profil du joueur")
-
+    st.subheader("Profil du joueur (percentiles)")
+    st.caption("Valeurs en percentile par rapport à tous les joueurs filtrés (100 = meilleur)")
 
     # Calculate player averages
     radar_metrics = {
@@ -998,8 +1001,7 @@ with tabs[1]:
         st.info("Colonne gameId absente côté joueurs → pas de détail par match disponible.")
 
 
-
-# TAB 3 — Team Match (fichiers équipes bruts)
+# TAB 3 — Team Match (Option B = fichiers équipes bruts)
 
 with tabs[2]:
     st.title("Team Match — comparaison match")
@@ -1208,7 +1210,7 @@ with tabs[2]:
                 )
 
 
-    # DISPLAY MATCHES
+    # DISPLAY MATCHES (2 per row)
 
     if chosen_label == "Tous les matchs":
         st.subheader(f"Tous les matchs de {selected_team} ({n_matches} matchs)")
